@@ -243,7 +243,6 @@ impl HttpRequestClient {
 
         // Read headers
         let mut headers_size: u32 = 0;
-        let mut dwsize: u32 = std::mem::size_of::<u32>() as u32;
 
         // First, the size to create the buffer
         let headers_info = unsafe {
@@ -251,8 +250,8 @@ impl HttpRequestClient {
                 hrequest.as_ptr(),
                 WINHTTP_QUERY_RAW_HEADERS_CRLF,
                 PCWSTR::null(),
-                Some(&mut headers_size as *mut u32 as *mut c_void),
-                &mut dwsize,
+                None,
+                &mut headers_size,
                 std::ptr::null_mut(),
             )
         };

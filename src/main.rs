@@ -1,6 +1,6 @@
 mod util;
 
-use crate::util::http_client::HttpRequestClient;
+use crate::util::{http_client::HttpRequestClient};
 use std::collections::HashMap;
 
 fn main() -> anyhow::Result<()> {
@@ -15,6 +15,9 @@ fn main() -> anyhow::Result<()> {
         println!("{}: {}", key, value);
     }
     println!("Body:\n{}", resp.body);
+
+    let json: serde_json::Value = client.get_json("https://jsonplaceholder.typicode.com/todos/1")?;
+    println!("JSON Response: {}", json);
 
     Ok(())
 }

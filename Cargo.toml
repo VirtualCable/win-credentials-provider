@@ -13,3 +13,20 @@ anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
+
+[profile.release]
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "z"  # Optimize for size.
+
+[build-dependencies]
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 0
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
+
+[dev-dependencies]
+mockito = "1.7.0"

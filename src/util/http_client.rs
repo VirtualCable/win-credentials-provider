@@ -13,6 +13,8 @@ pub struct HttpResponse {
 
 pub struct HttpRequestClient {
     pub verify_ssl: bool,
+    pub proxy: Option<String>,             // Proxy
+    pub proxy_bypass_list: Option<String>, // Bypass list
 }
 
 #[derive(Debug)]
@@ -61,11 +63,29 @@ impl Drop for WinHttpHandle {
 
 impl HttpRequestClient {
     pub fn new() -> Self {
-        Self { verify_ssl: true }
+        Self {
+            verify_ssl: true,
+            proxy: None,
+            proxy_bypass_list: None,
+        }
     }
 
-    pub fn with_ignore_ssl(&self) -> Self {
-        Self { verify_ssl: false }
+    pub fn with_ignore_ssl(mut self) -> Self {
+        self.verify_ssl = false;
+        self
+    }
+
+    
+    #[allow(dead_code)]
+    pub fn with_proxy<S: Into<String>>(mut self, proxy: S) -> Self {
+        self.proxy = Some(proxy.into());
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn with_proxy_bypass_list<S: Into<String>>(mut self, bypass: S) -> Self {
+        self.proxy_bypass_list = Some(bypass.into());
+        self
     }
 
     pub fn parse_url(url: &str) -> Result<(bool, String, String, u16)> {
@@ -78,9 +98,18 @@ impl HttpRequestClient {
         };
 
         let mut parts = rest.splitn(2, '/');
-        let server = parts.next().unwrap_or("").to_string();
+        let host_port = parts.next().unwrap_or("");
+        let mut host_port_split = host_port.splitn(2, ':');
+        let server = host_port_split.next().unwrap_or("").to_string();
+        let port_str = host_port_split.next().unwrap_or("");
+        let port = if port_str.is_empty() {
+            if use_ssl { 443 } else { 80 }
+        } else {
+            port_str
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid port number in URL: {url}"))?
+        };
         let path = format!("/{}", parts.next().unwrap_or(""));
-        let port = if use_ssl { 443 } else { 80 };
 
         Ok((use_ssl, server, path, port))
     }
@@ -100,16 +129,36 @@ impl HttpRequestClient {
         headers: HashMap<String, String>,
         body: Option<&[u8]>,
     ) -> Result<HttpResponse> {
+        // Ensures that the pointers live long enough by asssigning vars
+        let mut _proxy_wide: Option<widestring::U16CString> = None;
+        let mut _bypass_wide: Option<widestring::U16CString> = None;
+
+        let (access_type, proxy_pcwstr, bypass_pcwstr) = if let Some(proxy) = &self.proxy {
+            _proxy_wide = Some(widestring::U16CString::from_str(proxy)?);
+
+            if let Some(bypass) = &self.proxy_bypass_list {
+                _bypass_wide = Some(widestring::U16CString::from_str(bypass)?);
+            }
+
+            (
+                WINHTTP_ACCESS_TYPE_NAMED_PROXY,
+                _proxy_wide.as_ref().map_or(PCWSTR::null(), |p| PCWSTR::from_raw(p.as_ptr())),
+                _bypass_wide.as_ref().map_or(PCWSTR::null(), |b| PCWSTR::from_raw(b.as_ptr())),
+            )
+        } else {
+            (WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null())
+        };
+
+        // Ahora sí, proxy_wide y bypass_wide viven hasta aquí
         let hsession = WinHttpHandle::from_ptr(unsafe {
             WinHttpOpen(
                 w!("RustClientHttpWin/1.0"),
-                WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                None,
-                None,
+                access_type,
+                proxy_pcwstr,
+                bypass_pcwstr,
                 0,
             )
         })?;
-
         let wide_server = widestring::U16CString::from_str(server)
             .context("Failed to convert server name to wide string")?;
 
@@ -196,9 +245,18 @@ impl HttpRequestClient {
         };
 
         // Enviar
-        unsafe { WinHttpSendRequest(hrequest.as_ptr(), None, lpoptional, lpoptional_len, 0, 0) }
-            .ok()
-            .context("WinHttpSendRequest failed")?;
+        unsafe {
+            WinHttpSendRequest(
+                hrequest.as_ptr(),
+                None,
+                lpoptional,
+                lpoptional_len,
+                lpoptional_len,
+                0,
+            )
+        }
+        .ok()
+        .context("WinHttpSendRequest failed")?;
 
         unsafe { WinHttpReceiveResponse(hrequest.as_ptr(), std::ptr::null_mut()) }
             .ok()

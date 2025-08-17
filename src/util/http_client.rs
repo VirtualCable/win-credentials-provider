@@ -17,50 +17,7 @@ pub struct HttpRequestClient {
     pub proxy_bypass_list: Option<String>, // Bypass list
 }
 
-#[derive(Debug)]
-pub struct WinHttpHandle {
-    ptr: *mut std::ffi::c_void,
-}
-
-impl WinHttpHandle {
-    pub fn from_ptr(ptr: *mut std::ffi::c_void) -> Result<Self> {
-        // If null, raise an error
-        if ptr.is_null() {
-            // Get windows last error
-            let last_error = unsafe { GetLastError().0 };
-            return Err(anyhow::anyhow!(
-                "Null pointer passed to WinHttpHandle: {last_error}"
-            ));
-        }
-        Ok(Self { ptr })
-    }
-
-    pub fn as_ptr(&self) -> *mut std::ffi::c_void {
-        self.ptr
-    }
-}
-
-/// Helper Function to Convert Any Type to a Byte Slice
-fn as_u8_slice<T>(val: &T) -> &[u8] {
-    unsafe { std::slice::from_raw_parts(val as *const T as *const u8, std::mem::size_of::<T>()) }
-}
-
-impl Drop for WinHttpHandle {
-    fn drop(&mut self) {
-        if !self.ptr.is_null() {
-            unsafe {
-                // Simply ignore close handle errors. Maybe log them in a future?
-                WinHttpCloseHandle(self.ptr)
-                    .ok()
-                    .context("WinHttpCloseHandle failed")
-                    .unwrap_or_default();
-            }
-            self.ptr = std::ptr::null_mut();
-        }
-    }
-}
 // Request client
-
 impl HttpRequestClient {
     pub fn new() -> Self {
         Self {
@@ -70,22 +27,30 @@ impl HttpRequestClient {
         }
     }
 
-    pub fn with_ignore_ssl(mut self) -> Self {
-        self.verify_ssl = false;
-        self
-    }
-
-    
-    #[allow(dead_code)]
-    pub fn with_proxy<S: Into<String>>(mut self, proxy: S) -> Self {
-        self.proxy = Some(proxy.into());
-        self
+    #[must_use]
+    pub fn with_ignore_ssl(self) -> Self {
+        Self {
+            verify_ssl: false,
+            ..self
+        }
     }
 
     #[allow(dead_code)]
-    pub fn with_proxy_bypass_list<S: Into<String>>(mut self, bypass: S) -> Self {
-        self.proxy_bypass_list = Some(bypass.into());
-        self
+    #[must_use]
+    pub fn with_proxy<S: Into<String>>(self, proxy: S) -> Self {
+        Self {
+            proxy: Some(proxy.into()),
+            ..self
+        }
+    }
+
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn with_proxy_bypass_list<S: Into<String>>(self, bypass: S) -> Self {
+        Self {
+            proxy_bypass_list: Some(bypass.into()),
+            ..self
+        }
     }
 
     pub fn parse_url(url: &str) -> Result<(bool, String, String, u16)> {
@@ -114,7 +79,7 @@ impl HttpRequestClient {
         Ok((use_ssl, server, path, port))
     }
 
-    pub fn get(&self, url: &str, headers: HashMap<String, String>) -> Result<HttpResponse> {
+    pub fn get(&self, url: &str, headers: Option<HashMap<String, String>>) -> Result<HttpResponse> {
         let (use_ssl, server, path, port) = Self::parse_url(url)?;
         self.do_request("GET", use_ssl, &server, &path, port, headers, None)
     }
@@ -126,10 +91,10 @@ impl HttpRequestClient {
         server: &str,
         path: &str,
         port: u16,
-        headers: HashMap<String, String>,
+        headers: Option<HashMap<String, String>>,
         body: Option<&[u8]>,
     ) -> Result<HttpResponse> {
-        // Ensures that the pointers live long enough by asssigning vars
+        // Ensures that the pointers created to these vars live long enough by keeping them
         let mut _proxy_wide: Option<widestring::U16CString> = None;
         let mut _bypass_wide: Option<widestring::U16CString> = None;
 
@@ -142,15 +107,22 @@ impl HttpRequestClient {
 
             (
                 WINHTTP_ACCESS_TYPE_NAMED_PROXY,
-                _proxy_wide.as_ref().map_or(PCWSTR::null(), |p| PCWSTR::from_raw(p.as_ptr())),
-                _bypass_wide.as_ref().map_or(PCWSTR::null(), |b| PCWSTR::from_raw(b.as_ptr())),
+                _proxy_wide
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |p| PCWSTR::from_raw(p.as_ptr())),
+                _bypass_wide
+                    .as_ref()
+                    .map_or(PCWSTR::null(), |b| PCWSTR::from_raw(b.as_ptr())),
             )
         } else {
-            (WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null())
+            (
+                WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                PCWSTR::null(),
+                PCWSTR::null(),
+            )
         };
 
-        // Ahora sí, proxy_wide y bypass_wide viven hasta aquí
-        let hsession = WinHttpHandle::from_ptr(unsafe {
+        let hsession = WinHandle::from_ptr(unsafe {
             WinHttpOpen(
                 w!("RustClientHttpWin/1.0"),
                 access_type,
@@ -162,7 +134,7 @@ impl HttpRequestClient {
         let wide_server = widestring::U16CString::from_str(server)
             .context("Failed to convert server name to wide string")?;
 
-        let hconnect = WinHttpHandle::from_ptr(unsafe {
+        let hconnect = WinHandle::from_ptr(unsafe {
             WinHttpConnect(
                 hsession.as_ptr(),
                 PCWSTR::from_raw(wide_server.as_ptr()),
@@ -188,7 +160,7 @@ impl HttpRequestClient {
             .context("Failed to convert path to wide string")?;
         let path_wide = PCWSTR::from_raw(path_cstr.as_ptr());
 
-        let hrequest = WinHttpHandle::from_ptr(unsafe {
+        let hrequest = WinHandle::from_ptr(unsafe {
             WinHttpOpenRequest(
                 hconnect.as_ptr(),
                 verb_wide,
@@ -201,25 +173,27 @@ impl HttpRequestClient {
         })?;
 
         // Add headers
-        if !headers.is_empty() {
-            let mut headers_str = String::new();
-            for (k, v) in headers {
-                headers_str.push_str(&format!("{k}: {v}\r\n"));
-            }
-            let wide_headers = widestring::U16String::from_str(&headers_str);
+        if let Some(headers) = headers {
+            if !headers.is_empty() {
+                let mut headers_str = String::new();
+                for (k, v) in headers {
+                    headers_str.push_str(&format!("{k}: {v}\r\n"));
+                }
+                let wide_headers = widestring::U16String::from_str(&headers_str);
 
-            unsafe {
-                WinHttpAddRequestHeaders(
-                    hrequest.as_ptr(),
-                    wide_headers.as_slice(),
-                    WINHTTP_ADDREQ_FLAG_ADD,
-                )
+                unsafe {
+                    WinHttpAddRequestHeaders(
+                        hrequest.as_ptr(),
+                        wide_headers.as_slice(),
+                        WINHTTP_ADDREQ_FLAG_ADD,
+                    )
+                }
+                .ok()
+                .context("WinHttpAddRequestHeaders failed")?;
             }
-            .ok()
-            .context("WinHttpAddRequestHeaders failed")?;
         }
 
-        // Configurar SSL si hace falta
+        // Config SSL if needed
         if use_ssl {
             let opts = if !self.verify_ssl {
                 SECURITY_FLAG_IGNORE_UNKNOWN_CA
@@ -244,7 +218,7 @@ impl HttpRequestClient {
             None => (None, 0),
         };
 
-        // Enviar
+        // Send
         unsafe {
             WinHttpSendRequest(
                 hrequest.as_ptr(),
@@ -262,7 +236,7 @@ impl HttpRequestClient {
             .ok()
             .context("WinHttpReceiveResponse failed")?;
 
-        // Código de estado
+        // Status code
         let mut status_code: u32 = 0;
         let mut size = std::mem::size_of::<u32>() as u32;
         unsafe {
@@ -352,5 +326,113 @@ impl HttpRequestClient {
             body: body_str,
             headers: headers_map,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // Test GET sin proxy
+    #[test]
+    fn test_get_no_proxy() {
+        let client = HttpRequestClient::new();
+        let resp = client
+            .get(
+                "https://jsonplaceholder.typicode.com/posts/1",
+                None,
+            )
+            .expect("GET failed");
+        assert_eq!(resp.status_code, 200);
+    }
+
+    // Test POST sin proxy
+    #[test]
+    fn test_post_no_proxy() {
+        let client = HttpRequestClient::new();
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let resp = client
+            .do_request(
+                "POST",
+                true,
+                "jsonplaceholder.typicode.com",
+                "/posts",
+                443,
+                Some(headers),
+                Some(body.as_bytes()),
+            )
+            .expect("POST failed");
+        assert!(resp.status_code == 201 || resp.status_code == 200);
+    }
+
+    // Test GET con proxy
+    #[test]
+    fn test_get_with_proxy() {
+        let client = HttpRequestClient::new().with_proxy("proxy.dkmon.com:3128");
+        let url = "https://jsonplaceholder.typicode.com/posts/1";
+        let resp = client
+            .get(url, Some(HashMap::new()))
+            .expect("GET with proxy failed");
+        assert_eq!(resp.status_code, 200);
+    }
+
+    // Test POST con proxy
+    #[test]
+    fn test_post_with_proxy() {
+        let client = HttpRequestClient::new().with_proxy("proxy.dkmon.com:3128");
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let resp = client
+            .do_request(
+                "POST",
+                true,
+                "jsonplaceholder.typicode.com",
+                "/posts",
+                443,
+                Some(headers),
+                Some(body.as_bytes()),
+            )
+            .expect("POST with proxy failed");
+        assert!(resp.status_code == 201 || resp.status_code == 200);
+    }
+
+    // Test GET con proxy mal pero con bypass
+    #[test]
+    fn test_get_with_bad_proxy_bypass() {
+        let client = HttpRequestClient::new()
+            .with_proxy("bad.proxy:1234")
+            .with_proxy_bypass_list("jsonplaceholder.typicode.com");
+        let url = "https://jsonplaceholder.typicode.com/posts/1";
+        let resp = client
+            .get(url, Some(HashMap::new()))
+            .expect("GET with bad proxy and bypass failed");
+        assert_eq!(resp.status_code, 200);
+    }
+
+    // Test POST con proxy mal pero con bypass
+    #[test]
+    fn test_post_with_bad_proxy_bypass() {
+        let client = HttpRequestClient::new()
+            .with_proxy("bad.proxy:1234")
+            .with_proxy_bypass_list("jsonplaceholder.typicode.com");
+        let mut headers = HashMap::new();
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let resp = client
+            .do_request(
+                "POST",
+                true,
+                "jsonplaceholder.typicode.com",
+                "/posts",
+                443,
+                Some(headers),
+                Some(body.as_bytes()),
+            )
+            .expect("POST with bad proxy and bypass failed");
+        assert!(resp.status_code == 201 || resp.status_code == 200);
     }
 }

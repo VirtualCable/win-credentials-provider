@@ -3,20 +3,42 @@ name = "win-cred-provider"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib"]
+
 [dependencies]
 windows = { version = "0.61.3", features = [
-    "Win32_Foundation",
+    # Networking
     "Win32_Networking_WinHttp",
+
+    # Registry
     "Win32_System_Registry",
+
+    # COM
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+
+    # Basic Windows types and utilities
+    "Win32_Foundation",
+    "Win32_System_Ole",
+    "Win32_Graphics_Gdi",
+
+    # Credential Provider
+    "Win32_Security_Credentials",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem"
 ] }
+windows-core = "0.61.2"
+uuid = { version = "1", features = ["macro-diagnostics"] }
+
 anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
 
 [profile.release]
-strip = true  # Automatically strip symbols from the binary.
-opt-level = "z"  # Optimize for size.
+strip = true    # Automatically strip symbols from the binary.
+opt-level = "z" # Optimize for size.
 
 [build-dependencies]
 
@@ -30,3 +52,4 @@ opt-level = 3
 
 [dev-dependencies]
 mockito = "1.7.0"
+libloading = "0.8.8"    

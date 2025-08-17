@@ -25,7 +25,7 @@ impl HttpRequestClient {
             &Self::parse_url(url)?.1,
             &Self::parse_url(url)?.2,
             Self::parse_url(url)?.3,
-            headers,
+            Some(headers),
             Some(&body),
         ) {
             Ok(resp) => resp,
@@ -46,7 +46,7 @@ impl HttpRequestClient {
     #[allow(dead_code)]
     pub fn get_json<R: DeserializeOwned>(&self, url: &str) -> Result<R> {
         // Make the GET request
-        let response = match self.get(url, HashMap::new()) {
+        let response = match self.get(url, Some(HashMap::new())) {
             Ok(resp) => resp,
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -70,7 +70,7 @@ mod tests {
     use mockito::Server;
     use serde::{Deserialize, Serialize};
 
-    #[derive(Serialize, Deserialize)]
+    #[derive(Serialize, Deserialize, Debug)]
     struct Post {
         userid: u32,
         // id is optional, only on GET not POST
@@ -138,4 +138,5 @@ mod tests {
         }
         mock.assert();
     }
+
 }

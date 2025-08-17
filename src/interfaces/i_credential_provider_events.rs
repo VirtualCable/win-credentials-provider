@@ -8,7 +8,7 @@ use windows::core::*;
 
 #[interface("34201e5a-a787-41a3-a5a4-bd6dcf2a854e")]
 pub unsafe trait ICredentialProviderEvents: IUnknown {
-    fn CredentialsChanged(
+    unsafe fn CredentialsChanged(
         &self,
         upAdviseContext: usize,
     ) -> HRESULT;

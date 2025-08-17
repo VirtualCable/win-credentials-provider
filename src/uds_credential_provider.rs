@@ -13,7 +13,6 @@ use crate::interfaces::{
 
 #[implement(ICredentialProvider)]
 pub struct UDSCredentialsProvider {
-    // aquí tus campos internos
 }
 
 impl UDSCredentialsProvider {

@@ -8,28 +8,28 @@ use super::types::*;
 
 #[interface("fa6fa76b-66b7-4b11-95f1-86171118e816")]
 pub unsafe trait ICredentialProviderCredentialEvents: IUnknown {
-    fn SetFieldState(
+    unsafe fn SetFieldState(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         cpfs: CREDENTIAL_PROVIDER_FIELD_STATE,
     ) -> HRESULT;
 
-    fn SetFieldInteractiveState(
+    unsafe fn SetFieldInteractiveState(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         cpfis: CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
     ) -> HRESULT;
 
-    fn SetFieldString(
+    unsafe fn SetFieldString(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         psz: PCWSTR,
     ) -> HRESULT;
 
-    fn SetFieldCheckbox(
+    unsafe fn SetFieldCheckbox(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
@@ -37,42 +37,42 @@ pub unsafe trait ICredentialProviderCredentialEvents: IUnknown {
         pszLabel: PCWSTR,
     ) -> HRESULT;
 
-    fn SetFieldBitmap(
+    unsafe fn SetFieldBitmap(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         hbmp: HBITMAP,
     ) -> HRESULT;
 
-    fn SetFieldComboBoxSelectedItem(
+    unsafe fn SetFieldComboBoxSelectedItem(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         dwSelectedItem: u32,
     ) -> HRESULT;
 
-    fn DeleteFieldComboBoxItem(
+    unsafe fn DeleteFieldComboBoxItem(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         dwItem: u32,
     ) -> HRESULT;
 
-    fn AppendFieldComboBoxItem(
+    unsafe fn AppendFieldComboBoxItem(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         pszItem: PCWSTR,
     ) -> HRESULT;
 
-    fn SetFieldSubmitButton(
+    unsafe fn SetFieldSubmitButton(
         &self,
         pcpc: *const ICredentialProviderCredential,
         dwFieldID: u32,
         dwAdjacentTo: u32,
     ) -> HRESULT;
 
-    fn OnCreatingWindow(
+    unsafe fn OnCreatingWindow(
         &self,
         phwndOwner: *mut HWND,
     ) -> HRESULT;
@@ -101,7 +101,7 @@ pub unsafe trait ICredentialProviderCredential: IUnknown {
 
     unsafe fn GetStringValue(&self, dwFieldID: u32, ppsz: *mut PWSTR) -> HRESULT;
 
-    unsafe fn GetBitmapValue(&self, dwFieldID: u32, phbmp: *mut isize) -> HRESULT; // HBITMAP como isize
+    unsafe fn GetBitmapValue(&self, dwFieldID: u32, phbmp: *mut HBITMAP) -> HRESULT;
 
     unsafe fn GetCheckboxValue(
         &self,

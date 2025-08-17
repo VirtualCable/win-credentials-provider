@@ -10,7 +10,7 @@ use super::types::*;
 
 #[interface("a5da53f9-d475-4080-a120-910c4a739880")]
 pub unsafe trait ICredentialProviderFilter: IUnknown {
-    fn Filter(
+    unsafe fn Filter(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         dwFlags: u32,
@@ -19,7 +19,7 @@ pub unsafe trait ICredentialProviderFilter: IUnknown {
         cProviders: u32,
     ) -> HRESULT;
 
-    fn UpdateRemoteCredential(
+    unsafe fn UpdateRemoteCredential(
         &self,
         pcpcsIn: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         pcpcsOut: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,

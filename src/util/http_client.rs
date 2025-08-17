@@ -5,6 +5,45 @@ use windows::{
     core::*,
 };
 
+#[derive(Debug)]
+pub struct WinHttpHandle {
+    ptr: *mut std::ffi::c_void,
+}
+
+impl WinHttpHandle {
+    pub fn from_ptr(ptr: *mut std::ffi::c_void) -> Result<Self> {
+        // If null, raise an error
+        if ptr.is_null() {
+            // Get windows last error
+            let last_error = unsafe { GetLastError().0 };
+            return Err(anyhow::anyhow!(
+                "Null pointer passed to WinHttpHandle: {last_error}"
+            ));
+        }
+        Ok(Self { ptr })
+    }
+
+    pub fn as_ptr(&self) -> *mut std::ffi::c_void {
+        self.ptr
+    }
+}
+
+impl Drop for WinHttpHandle {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe {
+                // Simply ignore close handle errors. Maybe log them in a future?
+                WinHttpCloseHandle(self.ptr)
+                    .ok()
+                    .context("WinHttpCloseHandle failed")
+                    .unwrap_or_default();
+            }
+            self.ptr = std::ptr::null_mut();
+        }
+    }
+}
+
+
 pub struct HttpResponse {
     pub status_code: u32,
     pub body: String,
@@ -122,7 +161,7 @@ impl HttpRequestClient {
             )
         };
 
-        let hsession = WinHandle::from_ptr(unsafe {
+        let hsession = WinHttpHandle::from_ptr(unsafe {
             WinHttpOpen(
                 w!("RustClientHttpWin/1.0"),
                 access_type,
@@ -134,7 +173,7 @@ impl HttpRequestClient {
         let wide_server = widestring::U16CString::from_str(server)
             .context("Failed to convert server name to wide string")?;
 
-        let hconnect = WinHandle::from_ptr(unsafe {
+        let hconnect = WinHttpHandle::from_ptr(unsafe {
             WinHttpConnect(
                 hsession.as_ptr(),
                 PCWSTR::from_raw(wide_server.as_ptr()),
@@ -160,7 +199,7 @@ impl HttpRequestClient {
             .context("Failed to convert path to wide string")?;
         let path_wide = PCWSTR::from_raw(path_cstr.as_ptr());
 
-        let hrequest = WinHandle::from_ptr(unsafe {
+        let hrequest = WinHttpHandle::from_ptr(unsafe {
             WinHttpOpenRequest(
                 hconnect.as_ptr(),
                 verb_wide,
@@ -207,7 +246,7 @@ impl HttpRequestClient {
                 WinHttpSetOption(
                     Some(hrequest.as_ptr()),
                     WINHTTP_OPTION_SECURITY_FLAGS,
-                    Some(as_u8_slice(&opts)),
+                    Some(super::helpers::as_u8_slice(&opts)),
                 )
             }
             .ok()

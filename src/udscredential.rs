@@ -1,12 +1,13 @@
-use windows::{core::*, Win32::Graphics::Gdi::HBITMAP};
+use windows::{Win32::Graphics::Gdi::HBITMAP, core::*};
 
+use crate::interfaces::i_credential_provider_credential::{
+    ICredentialProviderCredential, ICredentialProviderCredential_Impl,
+    ICredentialProviderCredentialEvents,
+};
 use crate::interfaces::types::*;
-use crate::interfaces::i_credential_provider_credential::{ICredentialProviderCredential, ICredentialProviderCredential_Impl, ICredentialProviderCredentialEvents};
 
 #[implement(ICredentialProviderCredential)]
-pub struct UDSCredential {
-
-}
+pub struct UDSCredential {}
 
 impl UDSCredential {
     pub fn new() -> Self {
@@ -14,9 +15,10 @@ impl UDSCredential {
     }
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
-    unsafe fn Advise(&self, pcpce: *const ICredentialProviderCredentialEvents) -> HRESULT {
+    unsafe fn Advise(&self, _pcpce: *const ICredentialProviderCredentialEvents) -> HRESULT {
         HRESULT(0)
     }
 
@@ -24,7 +26,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         HRESULT(0)
     }
 
-    unsafe fn SetSelected(&self, pbAutoLogon: *mut BOOL) -> HRESULT {
+    unsafe fn SetSelected(&self, _pbAutoLogon: *mut BOOL) -> HRESULT {
         HRESULT(0)
     }
 

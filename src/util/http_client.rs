@@ -43,13 +43,14 @@ impl Drop for WinHttpHandle {
         }
     }
 }
-
+#[allow(dead_code)]
 pub struct HttpResponse {
     pub status_code: u32,
     pub body: String,
     pub headers: HashMap<String, String>, // Headers
 }
 
+#[allow(dead_code)]
 pub struct HttpRequestClient {
     pub verify_ssl: bool,
     pub proxy: Option<String>,             // Proxy
@@ -57,6 +58,7 @@ pub struct HttpRequestClient {
 }
 
 // Request client
+#[allow(dead_code)]
 impl HttpRequestClient {
     pub fn new() -> Self {
         Self {
@@ -283,10 +285,7 @@ impl HttpRequestClient {
             Ok(_) => {}
             Err(err) => {
                 error!("Failed to send HTTP request: {}", err);
-                return Result::Err(anyhow::anyhow!(
-                    "WinHttpSendRequest failed: {}",
-                    err
-                ));
+                return Result::Err(anyhow::anyhow!("WinHttpSendRequest failed: {}", err));
             }
         }
 
@@ -402,7 +401,7 @@ mod tests {
 
     use crate::util::logger::setup_logging;
 
-    // Test GET sin proxy
+    // Test GET without proxy
     #[test]
     fn test_get_no_proxy() {
         setup_logging("debug");
@@ -414,13 +413,14 @@ mod tests {
         assert_eq!(resp.status_code, 200);
     }
 
-    // Test POST sin proxy
+    // Test POST without proxy
     #[test]
     fn test_post_no_proxy() {
+        setup_logging("debug");
         let client = HttpRequestClient::new();
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let body = r#"{"userid":1,"id":1,"title":"Test Title","body":"Test Body"}"#;
         let resp = client
             .do_request(
                 "POST",
@@ -435,9 +435,10 @@ mod tests {
         assert!(resp.status_code == 201 || resp.status_code == 200);
     }
 
-    // Test GET con proxy
+    // Test GET withs proxy
     #[test]
     fn test_get_with_proxy() {
+        setup_logging("debug");
         let client = HttpRequestClient::new().with_proxy("proxy.dkmon.com:3128");
         let url = "https://jsonplaceholder.typicode.com/posts/1";
         let resp = client
@@ -446,13 +447,14 @@ mod tests {
         assert_eq!(resp.status_code, 200);
     }
 
-    // Test POST con proxy
+    // Test POST with proxy
     #[test]
     fn test_post_with_proxy() {
+        setup_logging("debug");
         let client = HttpRequestClient::new().with_proxy("proxy.dkmon.com:3128");
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let body = r#"{"userid":1,"id":1,"title":"Test Title","body":"Test Body"}"#;
         let resp = client
             .do_request(
                 "POST",
@@ -467,9 +469,10 @@ mod tests {
         assert!(resp.status_code == 201 || resp.status_code == 200);
     }
 
-    // Test GET con proxy mal pero con bypass
+    // Test GET with a bad proxy and bypass
     #[test]
     fn test_get_with_bad_proxy_bypass() {
+        setup_logging("debug");
         let client = HttpRequestClient::new()
             .with_proxy("bad.proxy:1234")
             .with_proxy_bypass_list("jsonplaceholder.typicode.com");
@@ -480,15 +483,16 @@ mod tests {
         assert_eq!(resp.status_code, 200);
     }
 
-    // Test POST con proxy mal pero con bypass
+    // Test POST with a bad proxy and bypass
     #[test]
     fn test_post_with_bad_proxy_bypass() {
+        setup_logging("debug");
         let client = HttpRequestClient::new()
             .with_proxy("bad.proxy:1234")
             .with_proxy_bypass_list("jsonplaceholder.typicode.com");
         let mut headers = HashMap::new();
         headers.insert("Content-Type".to_string(), "application/json".to_string());
-        let body = r#"{\"userid\":1,\"id\":1,\"title\":\"Test Title\",\"body\":\"Test Body\"}"#;
+        let body = r#"{"userid":1,"id":1,"title":"Test Title","body":"Test Body"}"#;
         let resp = client
             .do_request(
                 "POST",

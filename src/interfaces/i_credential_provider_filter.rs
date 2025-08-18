@@ -7,6 +7,7 @@ use windows::core::*;
 use super::types::*;
 
 // ICredentialProviderFilter COM interface
+#[allow(dead_code)]
 pub const CLSID_CREDENTIAL_PROVIDER_FILTER: GUID =
     GUID::from_u128(0xa5da53f9_d475_4080_a120_910c4a739880);
 

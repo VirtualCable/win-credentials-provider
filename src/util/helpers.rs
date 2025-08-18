@@ -2,6 +2,7 @@ use std::{ffi::OsStr, os::windows::ffi::OsStrExt, ptr};
 use windows::Win32::System::Com::CoTaskMemAlloc; // , CoTaskMemFree};
 use windows::core::*;
 
+#[allow(dead_code)]
 pub fn alloc_pwstr(s: &str) -> PWSTR {
     let wide: Vec<u16> = OsStr::new(s).encode_wide().chain(Some(0)).collect();
     unsafe {

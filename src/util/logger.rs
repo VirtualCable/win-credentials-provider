@@ -1,11 +1,6 @@
 pub fn setup_logging(level: &str) {
     // log file, located on home directory of current user
-    let log_file = std::env::home_dir()
-        .unwrap_or_else(|| {
-            eprintln!("Failed to get home directory, using current directory for logs.");
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-        })
-        .join("udsapp.log");
+    let log_file = std::env::temp_dir().join("uds-cred-prov.log");
     // Note that on tests, log_file will be overridden to stderr
     // but in production, it will be created in the temp directory
     // We need the allow(unused_variables) to avoid warnings about the log_file variable

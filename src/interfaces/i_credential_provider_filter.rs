@@ -7,7 +7,7 @@ use windows::core::*;
 use super::types::*;
 
 // ICredentialProviderFilter COM interface
-pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
+pub const CLSID_CREDENTIAL_PROVIDER_FILTER: GUID =
     GUID::from_u128(0xa5da53f9_d475_4080_a120_910c4a739880);
 
 #[interface("a5da53f9-d475-4080-a120-910c4a739880")]

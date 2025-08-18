@@ -47,11 +47,9 @@ pub extern "system" fn DllGetClassObject(
     riid: *const GUID,
     ppv: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
-        GUID::from_u128(0x12345678_1234_1234_1234_1234567890ab);
-
+    util::logger::setup_logging("info");
     unsafe {
-        if *rclsid != CLSID_UDS_CREDENTIAL_PROVIDER {
+        if *rclsid != crate::uds_credential_provider::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
 

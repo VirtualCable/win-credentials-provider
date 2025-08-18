@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use log::{debug, error};
 use std::{collections::HashMap, os::raw::c_void};
 use windows::{
     Win32::{Foundation::*, Networking::WinHttp::*},
@@ -42,7 +43,6 @@ impl Drop for WinHttpHandle {
         }
     }
 }
-
 
 pub struct HttpResponse {
     pub status_code: u32,
@@ -119,6 +119,7 @@ impl HttpRequestClient {
     }
 
     pub fn get(&self, url: &str, headers: Option<HashMap<String, String>>) -> Result<HttpResponse> {
+        debug!("GET request to URL: {}", url);
         let (use_ssl, server, path, port) = Self::parse_url(url)?;
         self.do_request("GET", use_ssl, &server, &path, port, headers, None)
     }
@@ -138,6 +139,7 @@ impl HttpRequestClient {
         let mut _bypass_wide: Option<widestring::U16CString> = None;
 
         let (access_type, proxy_pcwstr, bypass_pcwstr) = if let Some(proxy) = &self.proxy {
+            debug!("Using proxy: {}", proxy);
             _proxy_wide = Some(widestring::U16CString::from_str(proxy)?);
 
             if let Some(bypass) = &self.proxy_bypass_list {
@@ -181,6 +183,7 @@ impl HttpRequestClient {
                 0,
             )
         })?;
+        debug!("Connected to server: {}", server);
 
         let flags = if use_ssl {
             WINHTTP_FLAG_SECURE
@@ -211,6 +214,11 @@ impl HttpRequestClient {
             )
         })?;
 
+        debug!(
+            "HTTP request created {}: {} -> {:?}",
+            method, path, hrequest
+        );
+
         // Add headers
         if let Some(headers) = headers {
             if !headers.is_empty() {
@@ -234,31 +242,34 @@ impl HttpRequestClient {
 
         // Config SSL if needed
         if use_ssl {
-            let opts = if !self.verify_ssl {
-                SECURITY_FLAG_IGNORE_UNKNOWN_CA
+            if !self.verify_ssl {
+                debug!("SSL verification disabled");
+                let opts = SECURITY_FLAG_IGNORE_UNKNOWN_CA
                     | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE
                     | SECURITY_FLAG_IGNORE_CERT_CN_INVALID
-                    | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID
+                    | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID;
+                unsafe {
+                    WinHttpSetOption(
+                        Some(hrequest.as_ptr()),
+                        WINHTTP_OPTION_SECURITY_FLAGS,
+                        Some(super::helpers::as_u8_slice(&opts)),
+                    )
+                }
+                .ok()
+                .context("WinHttpSetOption failed")?;
             } else {
-                SECURITY_FLAG_SECURE
+                debug!("SSL verification enabled");
             };
-            unsafe {
-                WinHttpSetOption(
-                    Some(hrequest.as_ptr()),
-                    WINHTTP_OPTION_SECURITY_FLAGS,
-                    Some(super::helpers::as_u8_slice(&opts)),
-                )
-            }
-            .ok()
-            .context("WinHttpSetOption failed")?;
         }
         let (lpoptional, lpoptional_len) = match body {
             Some(data) => (Some(data.as_ptr() as *const c_void), data.len() as u32),
             None => (None, 0),
         };
 
+        debug!("Sending HTTP request...");
+
         // Send
-        unsafe {
+        let res = unsafe {
             WinHttpSendRequest(
                 hrequest.as_ptr(),
                 None,
@@ -267,9 +278,19 @@ impl HttpRequestClient {
                 lpoptional_len,
                 0,
             )
+        };
+        match res {
+            Ok(_) => {}
+            Err(err) => {
+                error!("Failed to send HTTP request: {}", err);
+                return Result::Err(anyhow::anyhow!(
+                    "WinHttpSendRequest failed: {}",
+                    err
+                ));
+            }
         }
-        .ok()
-        .context("WinHttpSendRequest failed")?;
+
+        debug!("Waiting for response...");
 
         unsafe { WinHttpReceiveResponse(hrequest.as_ptr(), std::ptr::null_mut()) }
             .ok()
@@ -290,6 +311,8 @@ impl HttpRequestClient {
         }
         .ok()
         .context("WinHttpQueryHeaders STATUS_CODE failed")?;
+
+        debug!("HTTP request completed with status code: {}", status_code);
 
         // Read body
         let mut body_str = String::new();
@@ -312,6 +335,8 @@ impl HttpRequestClient {
             body_str.push_str(&String::from_utf8_lossy(&buf[..read as usize]));
         }
 
+        debug!("HTTP response body: {}", body_str.len());
+
         // Read headers
         let mut headers_size: u32 = 0;
 
@@ -326,6 +351,8 @@ impl HttpRequestClient {
                 std::ptr::null_mut(),
             )
         };
+
+        debug!("HTTP response headers: {}", headers_size);
 
         let headers_map = {
             if let Err(err) = headers_info {
@@ -373,15 +400,16 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    use crate::util::logger::setup_logging;
+
     // Test GET sin proxy
     #[test]
     fn test_get_no_proxy() {
-        let client = HttpRequestClient::new();
+        setup_logging("debug");
+
+        let client = HttpRequestClient::new(); //.with_ignore_ssl();
         let resp = client
-            .get(
-                "https://jsonplaceholder.typicode.com/posts/1",
-                None,
-            )
+            .get("https://jsonplaceholder.typicode.com/posts/1", None)
             .expect("GET failed");
         assert_eq!(resp.status_code, 200);
     }

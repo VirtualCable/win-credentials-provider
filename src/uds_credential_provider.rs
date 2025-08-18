@@ -11,9 +11,11 @@ use crate::interfaces::{
     i_credential_provider_events::ICredentialProviderEvents,
 };
 
+pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
+    GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
+
 #[implement(ICredentialProvider)]
-pub struct UDSCredentialsProvider {
-}
+pub struct UDSCredentialsProvider {}
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {

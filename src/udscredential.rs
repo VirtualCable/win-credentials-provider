@@ -1,5 +1,4 @@
-use windows::core::*;
-use windows::{core::*, Win32::Foundation::HWND, Win32::Graphics::Gdi::HBITMAP};
+use windows::{core::*, Win32::Graphics::Gdi::HBITMAP};
 
 use crate::interfaces::types::*;
 use crate::interfaces::i_credential_provider_credential::{ICredentialProviderCredential, ICredentialProviderCredential_Impl, ICredentialProviderCredentialEvents};

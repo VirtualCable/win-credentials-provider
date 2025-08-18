@@ -22,6 +22,8 @@ windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_System_Ole",
     "Win32_Graphics_Gdi",
+    "Win32_System_SystemServices",
+    "Win32_System_LibraryLoader",
 
     # Credential Provider
     "Win32_Security_Credentials",
@@ -29,12 +31,13 @@ windows = { version = "0.61.3", features = [
     "Win32_UI_Shell_PropertiesSystem"
 ] }
 windows-core = "0.61.2"
-uuid = { version = "1", features = ["macro-diagnostics"] }
 
 anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.142"
+log = "0.4.27"
+env_logger = "0.11.8"
 
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.

@@ -1,12 +1,17 @@
 // classfactory.rs
-use windows::core::{implement, GUID, HRESULT, Interface, IUnknown, Result, Ref, BOOL};
+use windows::core::*;
+use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_INVALIDARG, E_NOINTERFACE};
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
-use windows::Win32::Foundation::{
-    S_OK, E_NOINTERFACE, CLASS_E_NOAGGREGATION,
-    // S_FALSE, CLASS_E_CLASSNOTAVAILABLE,  // si los necesitas
-};
 
-use crate::{uds_credential_provider, udscredential, udscredential_filter};
+use crate::dll::{dll_add_ref, dll_release};
+
+// Interfaces (tus bindings)
+use crate::interfaces::i_credential_provider::ICredentialProvider;
+use crate::interfaces::i_credential_provider_filter::ICredentialProviderFilter;
+
+// Implementaciones concretas
+use crate::uds_credential_provider::UDSCredentialsProvider;
+use crate::udscredential_filter::UDSCredentialsFilter;
 
 #[implement(IClassFactory)]
 pub struct ClassFactory;
@@ -23,38 +28,46 @@ impl IClassFactory_Impl for ClassFactory_Impl  {
         riid: *const GUID,
         ppvobject: *mut *mut core::ffi::c_void,
     ) -> Result<()> {
-        // Ref representa un puntero COM que puede venir nulo en llamadas COM.
-        // Si tu Ref tiene .is_null(), úsalo para detectar agregación.
-        if punkouter.is_null() {
-            // sin agregación: OK, seguimos
-        } else {
-            return Err(CLASS_E_NOAGGREGATION.into());
-        }
-
         unsafe {
-            // Limpia siempre el out param por seguridad
+            // Agregación no soportada
+            if !punkouter.is_null() {
+                return Err(CLASS_E_NOAGGREGATION.into());
+            }
+            // Validación de punteros
+            if ppvobject.is_null() || riid.is_null() {
+                return Err(E_INVALIDARG.into());
+            }
             *ppvobject = core::ptr::null_mut();
 
-            // if *riid == udsprovider::UDSProvider::IID {
-            //     let hr: HRESULT = udsprovider::UDSProvider::new().query_interface(riid, ppvobject);
-            //     return if hr == S_OK { Ok(()) } else { Err(hr.into()) };
-            // }
+            // Igual que en el C++: decidir por IID qué objeto se instancia
+            if *riid == ICredentialProvider::IID {
+                // Instanciar el Credential Provider y devolverlo como ICredentialProvider
+                let iface: ICredentialProvider = UDSCredentialsProvider::new().into();
+                let ptr = iface.as_raw();
+                core::mem::forget(iface); // transferimos la propiedad al caller
+                *ppvobject = ptr as *mut _;
+                return Ok(());
+            }
 
-            // if *riid == udscredential_filter::UDSCredentialFilter::IID {
-            //     let hr: HRESULT = udscredential_filter::UDSCredentialFilter::new().query_interface(riid, ppvobject);
-            //     return if hr == S_OK { Ok(()) } else { Err(hr.into()) };
-            // }
+            if *riid == ICredentialProviderFilter::IID {
+                // Instanciar el Credential Filter y devolverlo como ICredentialProviderFilter
+                let iface: ICredentialProviderFilter = UDSCredentialsFilter::new().into();
+                let ptr = iface.as_raw();
+                core::mem::forget(iface);
+                *ppvobject = ptr as *mut _;
+                return Ok(());
+            }
+
+            Err(E_NOINTERFACE.into())
         }
-
-        Err(E_NOINTERFACE.into())
     }
 
     fn LockServer(&self, f_lock: BOOL) -> Result<()> {
-        // if f_lock.as_bool() {
-        //     dll_add_ref();
-        // } else {
-        //     dll_release();
-        // }
+        if f_lock.as_bool() {
+            dll_add_ref();
+        } else {
+            dll_release();
+        }
         Ok(())
     }
 }

@@ -1,0 +1,5 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\EventLog\Application\RustTestSource]
+"EventMessageFile"="C:\\Windows\\System32\\EventCreate.exe"
+"TypesSupported"=dword:00000007

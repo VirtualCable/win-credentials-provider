@@ -28,22 +28,22 @@ windows = { version = "0.61.3", features = [
     # Credential Provider
     "Win32_Security_Credentials",
     "Win32_UI_Shell",
-    "Win32_UI_Shell_PropertiesSystem"
+    "Win32_UI_Shell_PropertiesSystem",
 ] }
 windows-core = "0.61.2"
 
 anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
+serde_json = "1.0.143"
 log = "0.4.27"
 env_logger = "0.11.8"
-
+# For Protocol Buffers
+prost = "0.14.1"
+prost-types = "0.14.1"
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.
 opt-level = "z" # Optimize for size.
-
-[build-dependencies]
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]
@@ -53,6 +53,12 @@ opt-level = 0
 [profile.dev.package."*"]
 opt-level = 3
 
+[build-dependencies]
+prost-build = "0.14.1"
+chrono = "0.4.41"
+winres = "0.1"
+
+
 [dev-dependencies]
 mockito = "1.7.0"
-libloading = "0.8.8"    
+libloading = "0.8.8"

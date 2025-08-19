@@ -8,7 +8,6 @@ use windows::Win32::System::SystemServices::{
 };
 use windows::core::*;
 
-
 #[unsafe(no_mangle)]
 pub extern "system" fn DllMain(
     hinst_dll: HINSTANCE,
@@ -67,3 +66,4 @@ mod udscredential;
 mod udscredential_filter;
 mod util;
 mod dll;
+mod messages;

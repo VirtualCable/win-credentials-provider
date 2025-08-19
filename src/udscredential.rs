@@ -7,6 +7,7 @@ use crate::com::i_credential_provider_credential::{
 use crate::com::types::*;
 use crate::com::fields::*;
 
+#[allow(dead_code)]
 #[implement(ICredentialProviderCredential)]
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,  

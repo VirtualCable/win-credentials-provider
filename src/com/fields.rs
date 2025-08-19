@@ -2,6 +2,7 @@ use crate::com::types::{
     CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
 };
 
+#[allow(dead_code)]
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UdsFieldId {

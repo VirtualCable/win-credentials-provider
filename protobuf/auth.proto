@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package auth;
+
+message AuthRequest {
+  string auth_token = 1;     // This token is used for authentication
+  string username = 2;
+  string password = 3;
+  string domain = 4;
+
+  map<string, string> extra = 5; // Optional additional data for authentication
+}
+
+message AuthResponse {
+  int32 status_code = 1;     // 0 = OK, any other value = error
+  string error_message = 2;  // Textual explanation if there's an error
+}

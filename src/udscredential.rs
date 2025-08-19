@@ -1,17 +1,36 @@
 use windows::{Win32::Graphics::Gdi::HBITMAP, core::*};
 
-use crate::interfaces::i_credential_provider_credential::{
+use crate::com::i_credential_provider_credential::{
     ICredentialProviderCredential, ICredentialProviderCredential_Impl,
     ICredentialProviderCredentialEvents,
 };
-use crate::interfaces::types::*;
+use crate::com::types::*;
+use crate::com::fields::*;
 
 #[implement(ICredentialProviderCredential)]
-pub struct UDSCredential {}
+pub struct UDSCredential {
+    cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,  
+    descriptors: [CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR; UdsFieldId::NumFields as usize],  // An array holding  the type and name of each field
+    states: [FieldStatePair; UdsFieldId::NumFields as usize],  // State of each field in the tile
+    values: Vec<String>,  // Array containing the values of the fields
+    cred_prov_events: Option<ICredentialProviderCredentialEvents>,  // Optional events for the credential provider
+    username: String,  // Username for the credential
+    password: String,  // Password for the credential
+    domain: String,  // Domain for the credential
+}
 
 impl UDSCredential {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO::CPUS_LOGON,
+            descriptors: Default::default(),
+            states: Default::default(),
+            values: Vec::new(),
+            cred_prov_events: None,
+            username: String::new(),
+            password: String::new(),
+            domain: String::new(),
+        }
     }
 }
 

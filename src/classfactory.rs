@@ -6,8 +6,8 @@ use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
 use crate::dll::{dll_add_ref, dll_release};
 
 // Interfaces (tus bindings)
-use crate::interfaces::i_credential_provider::ICredentialProvider;
-use crate::interfaces::i_credential_provider_filter::ICredentialProviderFilter;
+use crate::com::i_credential_provider::ICredentialProvider;
+use crate::com::i_credential_provider_filter::ICredentialProviderFilter;
 
 // Implementaciones concretas
 use crate::uds_credential_provider::UDSCredentialsProvider;

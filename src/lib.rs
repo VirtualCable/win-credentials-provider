@@ -61,7 +61,7 @@ pub extern "system" fn DllGetClassObject(
 
 // ======== Resto de módulos ========
 mod classfactory;
-mod interfaces;
+mod com;
 mod uds_credential_provider;
 mod udscredential;
 mod udscredential_filter;

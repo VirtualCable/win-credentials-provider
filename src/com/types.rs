@@ -12,6 +12,17 @@ pub struct CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
     pub rgbSerialization: *mut u8, // byte*
 }
 
+impl Default for CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
+    fn default() -> Self {
+        Self {
+            ulAuthenticationPackage: 0,
+            clsidCredentialProvider: GUID::zeroed(),
+            cbSerialization: 0,
+            rgbSerialization: std::ptr::null_mut(),
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CREDENTIAL_PROVIDER_USAGE_SCENARIO {
@@ -46,6 +57,17 @@ pub struct CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR {
     pub cpft: CREDENTIAL_PROVIDER_FIELD_TYPE, // enum
     pub pszLabel: PWSTR,                      // LPWSTR
     pub guidFieldType: GUID,
+}
+
+impl Default for CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR {
+    fn default() -> Self {
+        Self {
+            dwFieldID: 0,
+            cpft: CREDENTIAL_PROVIDER_FIELD_TYPE::CPFT_INVALID,
+            pszLabel: PWSTR::default(),
+            guidFieldType: GUID::zeroed(),
+        }
+    }
 }
 
 #[repr(C)]

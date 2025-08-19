@@ -1,11 +1,11 @@
 use windows::core::*;
 
-use crate::interfaces::types::{
+use crate::com::types::{
     CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
     CREDENTIAL_PROVIDER_USAGE_SCENARIO,
 };
 
-use crate::interfaces::{
+use crate::com::{
     i_credential_provider::{ICredentialProvider, ICredentialProvider_Impl},
     i_credential_provider_credential::ICredentialProviderCredential,
     i_credential_provider_events::ICredentialProviderEvents,

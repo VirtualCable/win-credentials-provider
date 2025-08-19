@@ -1,9 +1,9 @@
 use windows::core::*;
 
-use crate::interfaces::i_credential_provider_filter::{
+use crate::com::i_credential_provider_filter::{
     ICredentialProviderFilter, ICredentialProviderFilter_Impl,
 };
-use crate::interfaces::types::*;
+use crate::com::types::*;
 
 #[implement(ICredentialProviderFilter)]
 pub struct UDSCredentialsFilter {}

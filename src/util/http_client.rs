@@ -197,18 +197,18 @@ impl HttpRequestClient {
         let accept_types: [PCWSTR; 2] = [windows::core::w!("*/*"), PCWSTR::null()];
 
         // Ensures the pointer is valid assigning a valid lifetime
-        let verb_cstr = widestring::U16CString::from_str(method)?;
-        let verb_wide = PCWSTR::from_raw(verb_cstr.as_ptr());
+        let verb_wide = widestring::U16CString::from_str(method)?;
+        let verb_wide_ptr = PCWSTR::from_raw(verb_wide.as_ptr());
 
-        let path_cstr = widestring::U16CString::from_str(path)
+        let path_wide = widestring::U16CString::from_str(path)
             .context("Failed to convert path to wide string")?;
-        let path_wide = PCWSTR::from_raw(path_cstr.as_ptr());
+        let path_wide_ptr = PCWSTR::from_raw(path_wide.as_ptr());
 
         let hrequest = WinHttpHandle::from_ptr(unsafe {
             WinHttpOpenRequest(
                 hconnect.as_ptr(),
-                verb_wide,
-                path_wide,
+                verb_wide_ptr,
+                path_wide_ptr,
                 None,
                 None,
                 accept_types.as_ptr(),

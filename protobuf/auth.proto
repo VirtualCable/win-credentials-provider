@@ -3,15 +3,16 @@ syntax = "proto3";
 package auth;
 
 message AuthRequest {
-  string auth_token = 1;     // This token is used for authentication
-  string username = 2;
-  string password = 3;
-  string domain = 4;
+  fixed32 protocol_version = 1;  // Current is 0x
+  string auth_token = 2;     // This token is used for authentication
+  string username = 3;
+  string password = 4;
+  string domain = 5;
 
-  map<string, string> extra = 5; // Optional additional data for authentication
 }
 
 message AuthResponse {
-  int32 status_code = 1;     // 0 = OK, any other value = error
-  string error_message = 2;  // Textual explanation if there's an error
+  fixed32 protocol_version = 1;          // Current
+  int32 status_code = 2;     // 0 = OK, any other value = error
+  string error_message = 3;  // Textual explanation if there's an error
 }

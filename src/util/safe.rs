@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::sync::Arc;
+use std::sync::{Mutex, Arc};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 
 #[derive(Debug)]
@@ -10,7 +10,7 @@ struct HandleInner {
 
 #[derive(Debug, Clone)]
 pub struct SafeHandle {
-    inner: Arc<HandleInner>,
+    inner: Arc<Mutex<HandleInner>>,
 }
 
 #[allow(dead_code)]
@@ -18,29 +18,29 @@ impl SafeHandle {
     /// Creates a SafeHandle that owns the handle (will close it on Drop)
     pub fn new(handle: HANDLE) -> Self {
         Self {
-            inner: Arc::new(HandleInner {
+            inner: Arc::new(Mutex::new(HandleInner {
                 handle,
                 owned: true,
-            }),
+            })),
         }
     }
 
     /// Creates a SafeHandle that does NOT own the handle (will NOT close it on Drop)
     pub fn from_borrowed(handle: HANDLE) -> Self {
         Self {
-            inner: Arc::new(HandleInner {
+            inner: Arc::new(Mutex::new(HandleInner {
                 handle,
                 owned: false,
-            }),
+            })),
         }
     }
 
     pub fn get(&self) -> HANDLE {
-        self.inner.handle
+        self.inner.lock().unwrap().handle
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.inner.handle.is_invalid()
+        !self.inner.lock().unwrap().handle.is_invalid()
     }
 
     pub fn into_raw(self) -> *mut core::ffi::c_void {
@@ -49,10 +49,30 @@ impl SafeHandle {
         handle.0
     }
 
+    pub fn clear(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.owned && !inner.handle.is_invalid() {
+            unsafe {
+                let _ = CloseHandle(inner.handle);
+            }
+        }
+        inner.handle = HANDLE::default();
+        inner.owned = false;
+    }
+
     /// Creates a non-owning SafeHandle from a raw HANDLE pointer
     pub fn from_raw(handle: *mut core::ffi::c_void) -> Self {
         let handle = HANDLE(handle);
         Self::from_borrowed(handle)
+    }
+
+    pub fn invalid() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HandleInner {
+                handle: HANDLE::default(),
+                owned: false,
+            })),
+        }
     }
 }
 
@@ -78,26 +98,19 @@ impl TryFrom<HANDLE> for SafeHandle {
     }
 }
 
-// AsRef para obtener el HANDLE sin mover
-impl AsRef<HANDLE> for SafeHandle {
-    fn as_ref(&self) -> &HANDLE {
-        &self.inner.handle
-    }
-}
-
 impl std::fmt::Display for SafeHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SafeHandle({:p})", self.inner.handle.0)
+        write!(f, "SafeHandle({:p})", self.inner.lock().unwrap().handle.0)
     }
 }
 
 impl Default for SafeHandle {
     fn default() -> Self {
         SafeHandle {
-            inner: Arc::new(HandleInner {
+            inner: Arc::new(Mutex::new(HandleInner {
                 handle: HANDLE::default(),
                 owned: true,
-            }),
+            })),
         }
     }
 }

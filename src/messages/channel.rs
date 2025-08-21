@@ -1,6 +1,6 @@
-use log::{error, info};
-use std::sync::OnceLock;
+use log::error;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -17,11 +17,11 @@ use crate::messages::{
 };
 use crate::util::safe::SafeHandle;
 
-static STOP_FLAG: OnceLock<AtomicBool> = OnceLock::new();
-
-pub struct NamedPipe {
+#[derive(Debug, Clone)]
+pub struct ChannelServer {
     handle: SafeHandle,
-    auth_token: String,
+    stop_flag: Arc<AtomicBool>,
+    request: Arc<Mutex<Option<AuthRequest>>>,
 }
 
 impl AuthRequest {
@@ -47,9 +47,60 @@ impl AuthRequest {
 }
 
 #[allow(dead_code)]
-impl NamedPipe {
-    pub fn create(auth_token: &str) -> Result<Self> {
-        let pipe_wide = widestring::U16CString::from_str(consts::PIPE_NAME)?;
+impl ChannelServer {
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.stop_flag.load(Ordering::SeqCst)
+    }
+
+    pub fn run_with_pipe(
+        auth_token: &str,
+        pipe_name: Option<&str>,
+    ) -> Result<(std::thread::JoinHandle<()>, ChannelServer)> {
+        let server = ChannelServer::create(pipe_name)
+            .ok()
+            .context("Failed to create ChannelServer")?;
+
+        let cloned_server = server.clone();
+        let auth_token = auth_token.to_string();
+        Ok((
+            std::thread::spawn(move || {
+                while !server.is_stopped() {
+                    match server.read_message::<AuthRequest>() {
+                        Ok(msg) => match msg {
+                            Some(msg) => {
+                                debug_dev!("Received AuthRequest: {:?}", msg);
+                                server.process_msg(msg, &auth_token);
+                                server.disconnect_pipe(false);
+                            }
+                            None => {
+                                std::thread::sleep(std::time::Duration::from_secs(1));
+                            }
+                        },
+                        Err(e) => {
+                            let _ = server.write_message(&AuthResponse {
+                                protocol_version: consts::MAGIC_HEADER,
+                                status_code: 1, // 1 = Invalid
+                                error_message: format!("Failed to read message: {}", e),
+                            });
+                            server.disconnect_pipe(false);
+                        }
+                    }
+                }
+            }),
+            cloned_server,
+        ))
+    }
+
+    pub fn run(auth_token: &str) -> Result<(std::thread::JoinHandle<()>, ChannelServer)> {
+        Self::run_with_pipe(auth_token, None)
+    }
+
+    fn create(name: Option<&str>) -> Result<Self> {
+        let pipe_wide = widestring::U16CString::from_str(name.unwrap_or(consts::PIPE_NAME))?;
         let pipe_wide_ptr = PCWSTR::from_raw(pipe_wide.as_ptr());
 
         let handle = unsafe {
@@ -57,7 +108,7 @@ impl NamedPipe {
                 pipe_wide_ptr,
                 PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_NOWAIT,
-                PIPE_UNLIMITED_INSTANCES,
+                1, // we do not need PIPE_UNLIMITED_INSTANCES, because we will sequentially process a single message
                 consts::PIPE_BUFFER,
                 consts::PIPE_BUFFER,
                 0,
@@ -66,16 +117,18 @@ impl NamedPipe {
         };
 
         if handle == INVALID_HANDLE_VALUE {
+            error!("Failed to create named pipe {}", consts::PIPE_NAME);
             return Err(anyhow::anyhow!("Failed to create named pipe"));
         }
 
         Ok(Self {
-            handle: SafeHandle::new(handle),
-            auth_token: auth_token.to_string(),
+            handle: SafeHandle::new(handle), // We will take care of releasing it on drop
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            request: std::sync::Arc::new(std::sync::Mutex::new(None)),
         })
     }
 
-    pub fn read_message<T: prost::Message + Default>(&self) -> Result<Option<T>> {
+    fn read_message<T: prost::Message + Default>(&self) -> Result<Option<T>> {
         let mut len_buf = [0u8; 4];
         let mut read = 0u32;
 
@@ -89,7 +142,8 @@ impl NamedPipe {
                 let code = (e.code().0 as u32) & 0xFFFF;
                 // if error, can be ERROR_PIPE_LISTENING (536) --> Other side not connected, so we cannot read
                 // or ERROR_NO_DATA (232) --> No data to read
-                if code == 232 || code == 536 {
+                if matches!(code, 232 | 233 | 536) {
+                    debug_dev!("No data to read or pipe not connected: {}", code);
                     return Ok(None); // No data to read
                 }
                 return Err(anyhow::anyhow!("Failed to read message length: {}", e));
@@ -98,6 +152,8 @@ impl NamedPipe {
 
         let msg_len = (&len_buf[..]).read_u32::<LittleEndian>()? as usize;
         if msg_len > consts::MAX_MESSAGE_SIZE {
+            // Disconnect here, will do it again later, but no problem (will return an error that will not interfere with )
+            self.disconnect_pipe(true);
             return Err(anyhow::anyhow!("Message too large: {} bytes", msg_len));
         }
 
@@ -112,7 +168,7 @@ impl NamedPipe {
         Ok(Some(msg))
     }
 
-    pub fn write_message<T: prost::Message>(&self, msg: &T) -> Result<()> {
+    fn write_message<T: prost::Message>(&self, msg: &T) -> Result<()> {
         let mut buf = Vec::new();
         msg.encode(&mut buf)?;
 
@@ -134,20 +190,44 @@ impl NamedPipe {
             )
             .ok()
             .context("Failed to write message length")?;
+            // Ensure the entire length header is written
+            if written != len_buf.len() as u32 {
+                return Err(anyhow::anyhow!("Failed to write complete message length"));
+            }
 
             WriteFile(self.handle.get(), Some(&mut buf), Some(&mut written), None)
                 .ok()
                 .context("Failed to write message body")?;
+            // Ensure the entire message is written
+            if written != buf.len() as u32 {
+                return Err(anyhow::anyhow!("Failed to write complete message body"));
+            }
         }
 
         Ok(())
     }
 
-    pub fn process_msg(&self, msg: AuthRequest) {
+    fn send_invalid_message(&self, error_message: &str) {
+        let _ = self.write_message(&AuthResponse {
+            protocol_version: consts::MAGIC_HEADER,
+            status_code: 1, // 1 = Invalid
+            error_message: error_message.to_string(),
+        });
+    }
+
+    fn process_msg(&self, msg: AuthRequest, auth_token: &str) {
         // Process the message, an if not valid simply discards it
         // Validate the message
         if let Err(e) = msg.validate() {
             error!("AuthRequest validation failed: {}", e);
+            // Send an error response
+            self.send_invalid_message(format!("AuthRequest validation failed: {}", e).as_str());
+
+            return;
+        }
+        if msg.auth_token != auth_token {
+            error!("Invalid auth token: {}", msg.auth_token);
+            self.send_invalid_message(format!("Invalid auth token: {}", msg.auth_token).as_str());
             return;
         }
 
@@ -159,56 +239,265 @@ impl NamedPipe {
             error_message: String::new(),
         };
 
-        // TODO: Insert the message in a processing queue
+        // Store so it can be processed later
+        self.request.lock().unwrap().replace(msg);
 
         if let Err(e) = self.write_message(&response) {
             error!("Failed to send AuthResponse: {}", e);
         }
     }
 
-        
+    fn disconnect_pipe(&self, force: bool) {
+        // Disconnect the client, but do not destroy the Pipe itself
+        if force {
+            debug_dev!("Disconnecting named pipe");
+            let _ = unsafe { FlushFileBuffers(self.handle.get()) };
+        }
+        debug_dev!("Flushed file buffers");
+        let _ = unsafe { DisconnectNamedPipe(self.handle.get()) };
+        debug_dev!("Disconnected named pipe");
+    }
 
     // function that will run a thread that will process incomming messages until stopped
-    pub fn start_message_processing(auth_token: &str) -> Option<std::thread::JoinHandle<()>> {
-        let pipe = match NamedPipe::create(auth_token) {
-            Ok(p) => p,
-            Err(e) => {
-                error!("Cannot create named pipe: {}", e);
-                return None;
-            }
-        };
-        let stop_flag = STOP_FLAG.get_or_init(|| AtomicBool::new(false));
-        Some(std::thread::spawn(move || {
-            while !stop_flag.load(Ordering::Relaxed) {
-                match pipe.read_message::<AuthRequest>() {
-                    Ok(msg) => {
-                        match msg {
-                            Some(msg) => {
-                                debug_dev!("Received AuthRequest: {:?}", msg);
-                                pipe.process_msg(msg);
-                            }
-                            None => {
-                                std::thread::sleep(std::time::Duration::from_secs(1));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error reading message: {}", e);
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                    }
-                }
-                // Process incoming messages
-            }
-        }))
+}
+
+impl Drop for ChannelServer {
+    fn drop(&mut self) {
+        debug_dev!("Dropping ChannelServer, cleaning up resources");
+        self.handle.clear(); // Early drop
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use log::info;
+    use prost::Message;
     use rand::{Rng, distr};
+    use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
 
     use crate::{messages::auth::*, util::logger::setup_logging};
+
+    #[test]
+    fn test_create_destroy_create() {
+        setup_logging("debug");
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some("\\\\.\\pipe\\ChanTest1")).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(1000)); // Wait for start
+
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some("\\\\.\\pipe\\ChanTest1")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1000)); // Wait for start
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_send_valid_auth_request() {
+        setup_logging("debug");
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTest2";
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(1000)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+
+        // If not valid, unwrap of CreateFileW already panics
+        write_pipe_auth_request(&pipe_handle, &token).unwrap();
+        let response = read_pipe_auth_response(&pipe_handle).unwrap();
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+
+        assert_eq!(response.protocol_version, consts::MAGIC_HEADER);
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_only_one_client_allowed() {
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTest3";
+        setup_logging("debug");
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(1000)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+        assert!(pipe_handle.is_valid(), "Failed to open client pipe");
+
+        // A second one, should fail
+        let second_pipe_handle = open_client_pipe(PIPE_NAME);
+        assert!(!second_pipe_handle.is_valid());
+
+        // Stop the server
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_invalid_auth_request() {
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTest4";
+        setup_logging("debug");
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(500)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+
+        let mut buf = rand::rng()
+            .sample_iter(&distr::Alphanumeric)
+            .take(1024)
+            .map(char::from)
+            .collect::<String>()
+            .encode_to_vec();
+
+        let mut len_buf = Vec::new();
+        len_buf.write_u32::<LittleEndian>(buf.len() as u32).unwrap();
+
+        let mut written = 0u32;
+        unsafe {
+            WriteFile(
+                pipe_handle.get(),
+                Some(&mut len_buf),
+                Some(&mut written),
+                None,
+            )
+            .unwrap();
+            WriteFile(pipe_handle.get(), Some(&mut buf), Some(&mut written), None).unwrap();
+        }
+
+        // Wait for response, but don't block to process timeout
+        let mut response_buf = Vec::new();
+        let mut response_len = [0u8; 4];
+        let mut read = 0u32;
+
+        unsafe {
+            ReadFile(
+                pipe_handle.get(),
+                Some(&mut response_len),
+                Some(&mut read),
+                None,
+            )
+            .unwrap();
+            assert_eq!(read, 4);
+            let msg_len = (&response_len[..]).read_u32::<LittleEndian>().unwrap() as usize;
+            response_buf.resize(msg_len, 0);
+            ReadFile(
+                pipe_handle.get(),
+                Some(&mut response_buf),
+                Some(&mut read),
+                None,
+            )
+            .unwrap();
+            assert_eq!(read, msg_len as u32);
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+
+        let response = AuthResponse::decode(&*response_buf).unwrap();
+        assert_eq!(response.protocol_version, consts::MAGIC_HEADER);
+        assert_eq!(response.status_code, 1);
+
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_invalid_structure_auth_request() {
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTest5";
+        setup_logging("debug");
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(500)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+        write_pipe_auth_request_with_auth_req(
+            &pipe_handle,
+            &AuthRequest {
+                protocol_version: 0xDEADBEEF,          // Incorrect protocol
+                auth_token: "short_token".to_string(), // Too short
+                username: "".to_string(),              // Empty username
+                password: "p".repeat(129),             // Too long
+                domain: "test.local".to_string(),
+            },
+        )
+        .unwrap();
+
+        let response = read_pipe_auth_response(&pipe_handle).unwrap();
+        assert_eq!(response.status_code, 1);
+        assert!(response.error_message.contains("validation failed"));
+
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+    }
+
+    #[test]
+    fn test_message_too_large() {
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTest6";
+        setup_logging("debug");
+        let token = gen_auth_token();
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(500)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+
+        // Mensaje de tamaño excesivo
+        let mut oversized_payload = vec![b'A'; consts::MAX_MESSAGE_SIZE + 100];
+        let mut len_buf = Vec::new();
+        len_buf
+            .write_u32::<LittleEndian>(oversized_payload.len() as u32)
+            .unwrap();
+
+        let mut written = 0u32;
+        unsafe {
+            WriteFile(
+                pipe_handle.get(),
+                Some(&mut len_buf),
+                Some(&mut written),
+                None,
+            )
+            .unwrap();
+            let result = WriteFile(
+                pipe_handle.get(),
+                Some(&mut oversized_payload),
+                Some(&mut written),
+                None,
+            );
+            // Should return an 0x00E9 Error because server closed our conn
+            assert!(
+                result.is_err(),
+                "WriteFile should fail with oversized payload"
+            );
+            assert_eq!(
+                written, 0,
+                "No bytes should be written for oversized payload"
+            );
+            assert_eq!(result.unwrap_err().code().0 as u32 & 0xFFFF, 0x00E9);
+        }
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+    }
+
+    // ***********
+    // ==Helpers**
+    // ***********
 
     // 64 char token for testing
     fn gen_auth_token() -> String {
@@ -219,61 +508,97 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_read_named_pipe_no_data() {
-        setup_logging("debug");
-        let token = gen_auth_token();
-        let pipe = NamedPipe::create(&token).expect("Failed to create named pipe");
-        match pipe.read_message::<AuthRequest>() {
-            Ok(msg) => {
-                if let Some(msg) = msg {
-                    // Process the message
-                    debug_dev!("Received AuthRequest: {:?}", msg);
-                    match msg.validate() {
-                        Ok(_) => {
-                            debug_dev!("AuthRequest is valid");
-                        }
-                        Err(e) => {
-                            debug_dev!("AuthRequest validation failed: {}", e);
-                        }
-                    }
-                } else {
-                    // No message received
-                    debug_dev!("No AuthRequest received");
-                }
+    fn open_client_pipe(pipe_name: &str) -> SafeHandle {
+        for _ in 0..10 {
+            let pipe_handle = open_client(pipe_name);
+            if pipe_handle.is_valid() {
+                return pipe_handle;
             }
-            Err(e) => {
-                error!("Error reading message: {}", e);
-                // Fail test
-                panic!("Test failed because: {}", e);
-            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
         }
+        SafeHandle::invalid()
     }
 
-    #[test]
-    fn test_start_message_processing_stops() {
-        setup_logging("debug");
-        let token = gen_auth_token();
-        let thread_handle = NamedPipe::start_message_processing(&token).unwrap(); // fail on None
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        STOP_FLAG.get().unwrap().store(true, Ordering::Relaxed);
-        // In a couple of second at most should have stopped processing messages
-        // Wait with a timeout
-        use std::sync::Arc;
-        let flag = Arc::new(AtomicBool::new(false));
-        flag.store(false, Ordering::Relaxed);
-        let flag_clone = Arc::clone(&flag);
-        let control_thread = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            if !flag_clone.load(Ordering::Relaxed) {
-                error!("Message processing thread did not stop in time");
-                panic!("Test failed: Message processing thread did not stop in time");
-            } else {
-                info!("Message processing thread stopped as expected");
-            }
-        });
-        thread_handle.join().expect("Thread panicked");
-        flag.store(true, Ordering::Relaxed);
-        control_thread.join().expect("Control thread panicked");
+    fn open_client(pipe_name: &str) -> SafeHandle {
+        let pipe_wide = widestring::U16CString::from_str(pipe_name).unwrap();
+        let pipe_handle = SafeHandle::new(
+            match unsafe {
+                CreateFileW(
+                    PCWSTR::from_raw(pipe_wide.as_ptr()),
+                    (GENERIC_WRITE | GENERIC_READ).0,
+                    FILE_SHARE_NONE,
+                    None,
+                    OPEN_EXISTING,
+                    FILE_FLAGS_AND_ATTRIBUTES::default(),
+                    None,
+                )
+            } {
+                Ok(handle) => handle,
+                Err(e) => {
+                    info!("Failed to open client pipe: {}", e);
+                    INVALID_HANDLE_VALUE
+                }
+            },
+        );
+
+        pipe_handle
+    }
+
+    fn write_pipe_auth_request_with_auth_req(handle: &SafeHandle, msg: &AuthRequest) -> Result<()> {
+        let mut buf = Vec::new();
+        msg.encode(&mut buf)?;
+
+        let mut len_buf = Vec::new();
+        len_buf.write_u32::<LittleEndian>(buf.len() as u32)?;
+
+        let mut written = 0u32;
+        unsafe {
+            WriteFile(handle.get(), Some(&mut len_buf), Some(&mut written), None)
+                .ok()
+                .context("Failed to write message length")?;
+            WriteFile(handle.get(), Some(&mut buf), Some(&mut written), None)
+                .ok()
+                .context("Failed to write message body")?;
+        }
+
+        Ok(())
+    }
+
+    fn write_pipe_auth_request(handle: &SafeHandle, auth_token: &str) -> Result<()> {
+        let msg = AuthRequest {
+            protocol_version: consts::MAGIC_HEADER,
+            auth_token: auth_token.to_string(),
+            username: "adolfo".to_string(),
+            password: "supersecret".to_string(),
+            domain: "test.local".to_string(),
+        };
+        write_pipe_auth_request_with_auth_req(handle, &msg)
+    }
+
+    fn read_pipe_auth_response(handle: &SafeHandle) -> Result<AuthResponse> {
+        let mut response_buf = Vec::new();
+        let mut response_len = [0u8; 4];
+        let mut read = 0u32;
+
+        unsafe {
+            ReadFile(handle.get(), Some(&mut response_len), Some(&mut read), None)
+                .ok()
+                .context("Failed to read response length")?;
+            assert_eq!(read, 4);
+            let msg_len = (&response_len[..])
+                .read_u32::<LittleEndian>()
+                .ok()
+                .context("Failed to read message length")? as usize;
+            response_buf.resize(msg_len, 0);
+            ReadFile(handle.get(), Some(&mut response_buf), Some(&mut read), None)
+                .ok()
+                .context("Failed to read response body")?;
+            assert_eq!(read, msg_len as u32);
+        }
+        let response = AuthResponse::decode(&*response_buf)
+            .ok()
+            .context("Failed to decode AuthResponse")?;
+
+        Ok(response)
     }
 }

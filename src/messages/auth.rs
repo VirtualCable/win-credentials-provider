@@ -14,15 +14,3 @@ pub struct AuthRequest {
     #[prost(string, tag = "5")]
     pub domain: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct AuthResponse {
-    /// Current
-    #[prost(fixed32, tag = "1")]
-    pub protocol_version: u32,
-    /// 0 = OK, any other value = error
-    #[prost(int32, tag = "2")]
-    pub status_code: i32,
-    /// Textual explanation if there's an error
-    #[prost(string, tag = "3")]
-    pub error_message: ::prost::alloc::string::String,
-}

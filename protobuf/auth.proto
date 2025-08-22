@@ -10,9 +10,3 @@ message AuthRequest {
   string domain = 5;
 
 }
-
-message AuthResponse {
-  fixed32 protocol_version = 1;          // Current
-  int32 status_code = 2;     // 0 = OK, any other value = error
-  string error_message = 3;  // Textual explanation if there's an error
-}

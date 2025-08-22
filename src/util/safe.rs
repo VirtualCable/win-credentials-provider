@@ -39,6 +39,28 @@ impl SafeHandle {
         self.inner.lock().unwrap().handle
     }
 
+    pub fn set(&self, handle: HANDLE) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.owned && !inner.handle.is_invalid() {
+            unsafe {
+                let _ = CloseHandle(inner.handle);
+            }
+        }
+        inner.handle = handle;
+        inner.owned = true;
+    }
+
+    pub fn set_borrowed(&self, handle: HANDLE) {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.owned && !inner.handle.is_invalid() {
+            unsafe {
+                let _ = CloseHandle(inner.handle);
+            }
+        }
+        inner.handle = handle;
+        inner.owned = false;
+    }
+
     pub fn is_valid(&self) -> bool {
         !self.inner.lock().unwrap().handle.is_invalid()
     }

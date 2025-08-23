@@ -1,3 +1,5 @@
+// Author: Adolfo Gómez <dkmaster@dkmon.com>
+
 use windows::{
     Win32::UI::Shell::{
         CPFIS_FOCUSED, CPFIS_NONE, CPFS_DISPLAY_IN_BOTH, CPFS_DISPLAY_IN_SELECTED_TILE,

@@ -19,6 +19,8 @@ pub struct ClassFactoryTest {
     cookie: u32,
 }
 
+// Only used on tests, disable analyzer warnings
+#[allow(dead_code)]
 impl ClassFactoryTest {
     pub fn new() -> Result<Self> {
         unsafe {

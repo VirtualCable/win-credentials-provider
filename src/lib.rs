@@ -14,6 +14,8 @@ pub extern "system" fn DllMain(
     fdw_reason: u32,
     _lp_reserved: *mut core::ffi::c_void,
 ) -> BOOL {
+    // Store the instance for later retrieval
+    dll::set_instance(hinst_dll);
     unsafe {
         match fdw_reason {
             DLL_PROCESS_ATTACH => {
@@ -63,6 +65,5 @@ pub extern "system" fn DllGetClassObject(
 pub mod classfactory;
 pub mod credential;
 pub mod dll;
-pub mod fields;
 pub mod messages;
 pub mod util;

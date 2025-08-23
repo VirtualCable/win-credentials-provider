@@ -1,25 +1,23 @@
+use log::debug;
+
 use windows::{
-    Win32::Foundation::NTSTATUS,
-    Win32::Graphics::Gdi::HBITMAP,
-    Win32::UI::Shell::{
-        CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-        CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
-        CREDENTIAL_PROVIDER_FIELD_STATE, CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
-        CREDENTIAL_PROVIDER_STATUS_ICON, CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        ICredentialProviderCredential, ICredentialProviderCredential_Impl,
-        ICredentialProviderCredentialEvents,
-    },
-    core::*,
+    core::*, Win32::{
+        Foundation::{E_INVALIDARG, NTSTATUS},
+        Graphics::Gdi::{LoadBitmapW, HBITMAP},
+        UI::Shell::{
+            ICredentialProviderCredential, ICredentialProviderCredentialEvents, ICredentialProviderCredential_Impl, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE, CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON, CREDENTIAL_PROVIDER_USAGE_SCENARIO
+        },
+    }
 };
 
-use crate::fields;
+use crate::dll;
+
+use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
 
 #[allow(dead_code)]
 #[implement(ICredentialProviderCredential)]
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-    descriptors: [CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR; fields::UdsFieldId::NumFields as usize], // An array holding  the type and name of each field
-    states: [fields::FieldStatePair; fields::UdsFieldId::NumFields as usize], // State of each field in the tile
     values: Vec<String>, // Array containing the values of the fields
     cred_prov_events: Option<ICredentialProviderCredentialEvents>, // Optional events for the credential provider
     username: String,                                              // Username for the credential
@@ -31,8 +29,6 @@ impl UDSCredential {
     pub fn new() -> Self {
         Self {
             cpus: CPUS_LOGON,
-            descriptors: Default::default(),
-            states: Default::default(),
             values: Vec::new(),
             cred_prov_events: None,
             username: String::new(),
@@ -58,19 +54,48 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn SetDeselected(&self) -> windows_core::Result<()> {
         Ok(())
     }
+
+    /// Retrieves the state of a field.
     fn GetFieldState(
         &self,
-        _dwfieldid: u32,
-        _pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
-        _pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
+        dwfieldid: u32,
+        pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
+        pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
     ) -> windows_core::Result<()> {
+        if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
+            return Err(E_INVALIDARG.into());
+        }
+        unsafe {
+            *pcpfs = CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize].state;
+            *pcpfis = CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize].interactive_state;
+        }
         Ok(())
     }
-    fn GetStringValue(&self, _dwfieldid: u32) -> windows_core::Result<PWSTR> {
-        Ok(PWSTR::null())
+
+    /// Retrieves the string value of a field.
+    fn GetStringValue(&self, dwfieldid: u32) -> windows_core::Result<PWSTR> {
+        if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
+            return Err(E_INVALIDARG.into());
+        }
+        let value = self.values[dwfieldid as usize].as_str();
+        debug!("GetStringValue called for field ID: {}; {}", dwfieldid, value);
+        match crate::util::comstr::alloc_pwstr(value) {
+            Ok(pwstr) => Ok(pwstr),
+            Err(_) => Err(E_INVALIDARG.into()),
+        }
     }
-    fn GetBitmapValue(&self, _dwfieldid: u32) -> windows_core::Result<HBITMAP> {
-        Ok(HBITMAP::default())
+
+    // Get the bitmap shown on the user tile
+    fn GetBitmapValue(&self, dwfieldid: u32) -> windows_core::Result<HBITMAP> {
+        if dwfieldid == UdsFieldId::TileImage as u32 {
+            // #define MAKEINTRESOURCEA(i) ((LPSTR)((ULONG_PTR)((WORD)(i))))
+            unsafe {
+                let hbmp = LoadBitmapW(Some(dll::get_instance()), crate::util::helpers::make_int_resource_a(101));
+                Ok(hbmp)
+            }
+        } else {
+            Err(E_INVALIDARG.into())
+        }
     }
     fn GetCheckboxValue(
         &self,

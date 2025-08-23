@@ -68,6 +68,8 @@ fn main() {
     );
     res.set("CompanyName", "Virtual Cable S.L.U.");
 
+    res.append_rc_content(r##"101      BITMAP      DISCARDABLE "img/uds.bmp" "##);
+
     // Compile resources
     res.compile().unwrap();
 }

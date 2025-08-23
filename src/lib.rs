@@ -67,4 +67,3 @@ pub mod credential;
 pub mod dll;
 pub mod messages;
 pub mod util;
-pub mod bitmap;

@@ -1,13 +1,21 @@
 use log::debug;
 
 use windows::{
-    core::*, Win32::{
+    Win32::{
         Foundation::{E_INVALIDARG, NTSTATUS},
-        Graphics::Gdi::{LoadBitmapW, HBITMAP},
-        UI::Shell::{
-            ICredentialProviderCredential, ICredentialProviderCredentialEvents, ICredentialProviderCredential_Impl, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE, CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON, CREDENTIAL_PROVIDER_USAGE_SCENARIO
+        Graphics::Gdi::HBITMAP,
+        UI::{
+            Shell::{
+                CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+                CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
+                CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON,
+                CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProviderCredential,
+                ICredentialProviderCredential_Impl, ICredentialProviderCredentialEvents,
+            },
+            WindowsAndMessaging::{IMAGE_BITMAP, LR_CREATEDIBSECTION, LR_DEFAULTCOLOR, LoadImageW},
         },
-    }
+    },
+    core::*,
 };
 
 use crate::dll;
@@ -16,6 +24,7 @@ use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
 
 #[allow(dead_code)]
 #[implement(ICredentialProviderCredential)]
+#[derive(Clone)]
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
     values: Vec<String>, // Array containing the values of the fields
@@ -78,7 +87,10 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             return Err(E_INVALIDARG.into());
         }
         let value = self.values[dwfieldid as usize].as_str();
-        debug!("GetStringValue called for field ID: {}; {}", dwfieldid, value);
+        debug!(
+            "GetStringValue called for field ID: {}; {}",
+            dwfieldid, value
+        );
         match crate::util::comstr::alloc_pwstr(value) {
             Ok(pwstr) => Ok(pwstr),
             Err(_) => Err(E_INVALIDARG.into()),
@@ -88,15 +100,22 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // Get the bitmap shown on the user tile
     fn GetBitmapValue(&self, dwfieldid: u32) -> windows_core::Result<HBITMAP> {
         if dwfieldid == UdsFieldId::TileImage as u32 {
-            // #define MAKEINTRESOURCEA(i) ((LPSTR)((ULONG_PTR)((WORD)(i))))
             unsafe {
-                let hbmp = LoadBitmapW(Some(dll::get_instance()), crate::util::helpers::make_int_resource_a(101));
-                Ok(hbmp)
+                LoadImageW(
+                    Some(dll::get_instance()),
+                    crate::util::helpers::make_int_resource_a(101),
+                    IMAGE_BITMAP,
+                    0,
+                    0,
+                    LR_CREATEDIBSECTION | LR_DEFAULTCOLOR,
+                )
+                .map(|hbmp_handle| HBITMAP(hbmp_handle.0))
             }
         } else {
             Err(E_INVALIDARG.into())
         }
     }
+
     fn GetCheckboxValue(
         &self,
         _dwfieldid: u32,

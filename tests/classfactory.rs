@@ -1,3 +1,4 @@
+#![cfg(windows)]
 // Integration tests for COM class factory
 
 mod utils;

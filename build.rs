@@ -6,6 +6,7 @@ use winres::WindowsResource;
 
 fn main() {
     println!("cargo:rerun-if-changed=protobuf/auth.proto");
+    println!("cargo:rerun-if-changed=img/uds.bmp");
 
     let out_dir = PathBuf::from("src/messages");
     std::fs::create_dir_all(&out_dir).unwrap();
@@ -68,7 +69,7 @@ fn main() {
     );
     res.set("CompanyName", "Virtual Cable S.L.U.");
 
-    res.append_rc_content(r##"101      BITMAP      DISCARDABLE "img/uds.bmp" "##);
+    res.append_rc_content(r##"101      BITMAP      DISCARDABLE "img/uds.bmp""##);
 
     // Compile resources
     res.compile().unwrap();

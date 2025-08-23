@@ -8,15 +8,21 @@ use windows::{
     core::*,
 };
 
+use super::credential::UDSCredential;
+
 pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
     GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
 
 #[implement(ICredentialProvider)]
-pub struct UDSCredentialsProvider {}
+pub struct UDSCredentialsProvider {
+    credential: UDSCredential,
+}
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            credential: UDSCredential::new(),
+        }
     }
 }
 
@@ -61,7 +67,11 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     ) -> windows_core::Result<()> {
         Ok(())
     }
-    fn GetCredentialAt(&self, _dwindex: u32) -> Result<ICredentialProviderCredential> {
-        Err(windows_core::Error::from_hresult(E_INVALIDARG))
+    fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
+        if dwindex == 0 {
+            Ok(self.credential.clone().into())
+        } else {
+            Err(windows_core::Error::from_hresult(E_INVALIDARG))
+        }
     }
 }

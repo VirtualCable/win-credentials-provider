@@ -1,10 +1,10 @@
 [package]
-name = "win-cred-provider"
+name = "win_cred_provider"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # https://microsoft.github.io/windows-rs/features/
@@ -34,6 +34,7 @@ windows = { version = "0.61.3", features = [
     "Win32_Security_Credentials",
     "Win32_UI_Shell",
     "Win32_UI_Shell_PropertiesSystem",
+    "Win32_Security_Authentication_Identity"
 ] }
 # To avoid version conflicts with other imported packages, force this version
 windows-core = "0.61.2"

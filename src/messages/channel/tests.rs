@@ -63,8 +63,27 @@
 
         let pipe_handle = open_client_pipe(PIPE_NAME);
 
-        // If not valid, unwrap of CreateFileW already panics
         write_pipe_auth_request(&pipe_handle, &token).unwrap();
+        let _ = check_auth_request(&server, &token);
+        server.stop();
+        _server_thread.join().expect("Server thread panicked");
+    }
+
+    #[test]
+    fn test_rapid_close_auth_request() {
+        const PIPE_NAME: &str = "\\\\.\\pipe\\ChanTestRapidClose";
+        setup_logging("debug");
+        let token = gen_auth_token();
+
+        let (_server_thread, server) =
+            ChannelServer::run_with_pipe(&token, Some(PIPE_NAME)).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(500)); // Wait for start
+
+        let pipe_handle = open_client_pipe(PIPE_NAME);
+
+        write_pipe_auth_request(&pipe_handle, &token).unwrap();
+        pipe_handle.close();
         let _ = check_auth_request(&server, &token);
         server.stop();
         _server_thread.join().expect("Server thread panicked");

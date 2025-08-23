@@ -1,7 +1,6 @@
-use crate::com::types::{
-    CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
+use windows::Win32::UI::Shell::{
+    CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,CPFS_DISPLAY_IN_SELECTED_TILE, CPFIS_NONE
 };
-
 #[allow(dead_code)]
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -23,8 +22,8 @@ pub struct FieldStatePair {
 impl Default for FieldStatePair {
     fn default() -> Self {
         Self {
-            state: CREDENTIAL_PROVIDER_FIELD_STATE::CPFS_DISPLAY_IN_SELECTED_TILE,
-            interactive_state: CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE::CPFIS_NONE,
+            state: CPFS_DISPLAY_IN_SELECTED_TILE,
+            interactive_state: CPFIS_NONE,
         }
     }
 }

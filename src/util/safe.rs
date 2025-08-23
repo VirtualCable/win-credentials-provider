@@ -82,6 +82,10 @@ impl SafeHandle {
         inner.owned = false;
     }
 
+    pub fn close(&self) {
+        self.clear();
+    }
+
     /// Creates a non-owning SafeHandle from a raw HANDLE pointer
     pub fn from_raw(handle: *mut core::ffi::c_void) -> Self {
         let handle = HANDLE(handle);

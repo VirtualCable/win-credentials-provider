@@ -1,7 +1,7 @@
-use std::sync::atomic::{Ordering};
+use std::sync::atomic::Ordering;
 
-use windows::Win32::System::Com::{IClassFactory};
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, HINSTANCE, S_FALSE, S_OK};
+use windows::Win32::System::Com::IClassFactory;
 use windows::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows::Win32::System::SystemServices::{
     DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
@@ -48,7 +48,7 @@ pub extern "system" fn DllGetClassObject(
 ) -> HRESULT {
     util::logger::setup_logging("info");
     unsafe {
-        if *rclsid != crate::uds_credential_provider::CLSID_UDS_CREDENTIAL_PROVIDER {
+        if *rclsid != crate::credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
 
@@ -58,12 +58,11 @@ pub extern "system" fn DllGetClassObject(
     }
 }
 
-// ======== Resto de módulos ========
-mod classfactory;
-mod com;
-mod uds_credential_provider;
-mod udscredential;
-mod udscredential_filter;
-mod util;
-mod dll;
-mod messages;
+// ======== Modules ========
+// Public to use them in the integration tests
+pub mod classfactory;
+pub mod credential;
+pub mod dll;
+pub mod fields;
+pub mod messages;
+pub mod util;

@@ -10,7 +10,7 @@ fn dll_filename() -> String {
 }
 
 /// Returns the path to target/{debug|release}/{crate}.dll
-pub fn dll_path() -> PathBuf {
+fn dll_path() -> PathBuf {
     let mut path = std::env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("target"));
@@ -24,17 +24,16 @@ pub fn dll_path() -> PathBuf {
     path
 }
 
-pub fn dll_load() -> Library {
+pub fn load() -> Library {
     let dll_file = dll_path();
     assert_file_exists(&dll_file);
 
     unsafe {
-        Library::new(&dll_file)
-            .unwrap_or_else(|e| panic!("Could not find DLL {:?}: {e}", dll_file))
+        Library::new(&dll_file).unwrap_or_else(|e| panic!("Could not find DLL {:?}: {e}", dll_file))
     }
 }
 
-pub fn dll_get<'a, T>(lib: &'a Library, name: &str) -> Symbol<'a, T> {
+pub fn get<'a, T>(lib: &'a Library, name: &str) -> Symbol<'a, T> {
     unsafe {
         lib.get(name.as_bytes())
             .unwrap_or_else(|e| panic!("Could not find '{name}' in the DLL: {e}"))
@@ -42,7 +41,7 @@ pub fn dll_get<'a, T>(lib: &'a Library, name: &str) -> Symbol<'a, T> {
 }
 
 /// Friendly error message if the file does not exist
-pub fn assert_file_exists(path: &Path) {
+fn assert_file_exists(path: &Path) {
     assert!(
         path.exists(),
         "Could not find the DLL in {:?}. Compile with `cargo build` or run `cargo test{}`",

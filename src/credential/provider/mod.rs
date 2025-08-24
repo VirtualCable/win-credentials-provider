@@ -31,47 +31,47 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         _cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         _dwflags: u32,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Ok(())
     }
     fn SetSerialization(
         &self,
         _pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Ok(())
     }
     fn Advise(
         &self,
-        _pcpe: windows_core::Ref<'_, ICredentialProviderEvents>,
+        _pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
         _upadvisecontext: usize,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Ok(())
     }
-    fn UnAdvise(&self) -> windows_core::Result<()> {
+    fn UnAdvise(&self) -> windows::core::Result<()> {
         Ok(())
     }
-    fn GetFieldDescriptorCount(&self) -> windows_core::Result<u32> {
+    fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
         Ok(0)
     }
     fn GetFieldDescriptorAt(
         &self,
         _dwindex: u32,
-    ) -> windows_core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
+    ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
         Ok(std::ptr::null_mut())
     }
     fn GetCredentialCount(
         &self,
         _pdwcount: *mut u32,
         _pdwdefault: *mut u32,
-        _pbautologonwithdefault: *mut windows_core::BOOL,
-    ) -> windows_core::Result<()> {
+        _pbautologonwithdefault: *mut windows::core::BOOL,
+    ) -> windows::core::Result<()> {
         Ok(())
     }
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
         if dwindex == 0 {
             Ok(self.credential.clone().into())
         } else {
-            Err(windows_core::Error::from_hresult(E_INVALIDARG))
+            Err(windows::core::Error::from_hresult(E_INVALIDARG))
         }
     }
 }

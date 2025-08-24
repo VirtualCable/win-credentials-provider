@@ -6,7 +6,7 @@ use windows::Win32::{
         CREDENTIAL_PROVIDER_FIELD_STATE, CREDENTIAL_PROVIDER_FIELD_TYPE, SHStrDupW,
     },
 };
-use windows_core::{GUID, PWSTR};
+use windows::core::{GUID, PWSTR};
 
 #[derive(Debug, Clone)]
 pub struct CredentialFieldDescriptor {
@@ -19,13 +19,13 @@ pub struct CredentialFieldDescriptor {
 }
 
 impl CredentialFieldDescriptor {
-    pub fn into_com_alloc(self) -> windows_core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
+    pub fn into_com_alloc(self) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
         unsafe {
             let ptr = CoTaskMemAlloc(mem::size_of::<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR>())
                 as *mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR;
 
             if ptr.is_null() {
-                return Err(windows_core::Error::from_win32());
+                return Err(windows::core::Error::from_win32());
             }
 
             (*ptr).dwFieldID = self.field_id;
@@ -35,7 +35,7 @@ impl CredentialFieldDescriptor {
                 Ok(w) => w,
                 Err(_) => {
                     // Log, fallback, o abortar según el caso
-                    return Err(windows_core::Error::from_win32());
+                    return Err(windows::core::Error::from_win32());
                 }
             };
             match SHStrDupW(PWSTR(wide_label.as_ptr() as _)) {

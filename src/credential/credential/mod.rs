@@ -3,16 +3,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use log::debug;
+use log::{debug, info, error};
 
 use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_NOTIMPL, NTSTATUS},
-        Security::Authentication::Identity::{KERB_INTERACTIVE_UNLOCK_LOGON},
         Graphics::Gdi::HBITMAP,
+        Security::Authentication::Identity::{
+            KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
+            KerbWorkstationUnlockLogon,
+        },
         UI::{
             Shell::{
-                CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+                CPGSR_RETURN_CREDENTIAL_FINISHED, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
+                CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
                 CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
                 CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON,
                 CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProviderCredential,
@@ -25,11 +29,9 @@ use windows::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{debug_dev, dll};
+use crate::{credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, dll};
 
-use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
-
-mod packer;
+use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, lsa, types::UdsFieldId};
 
 #[derive(Debug, Clone)]
 struct Creds {
@@ -104,15 +106,15 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // If we need to update the UI, we can call the appropriate methods on the events object
     fn Advise(
         &self,
-        pcpce: windows_core::Ref<'_, ICredentialProviderCredentialEvents>,
-    ) -> windows_core::Result<()> {
+        pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
+    ) -> windows::core::Result<()> {
         debug!("Advising credential provider events");
         *self.this.cred_prov_events.borrow_mut() = pcpce.clone();
         Ok(())
     }
 
     // Release the callback
-    fn UnAdvise(&self) -> windows_core::Result<()> {
+    fn UnAdvise(&self) -> windows::core::Result<()> {
         debug!("Unadvising credential provider events");
         self.this.cred_prov_events.borrow_mut().take();
         Ok(())
@@ -120,7 +122,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
     // Invoked when our tile is selected.
     // We do not heed any special here, Just inform to not autologon
-    fn SetSelected(&self) -> windows_core::Result<windows_core::BOOL> {
+    fn SetSelected(&self) -> windows::core::Result<windows::core::BOOL> {
         // If we have an username, copy it to values
         let username: String = {
             let credential = self.this.credential.lock().unwrap();
@@ -148,7 +150,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
     // Our tile is deselected, clear the password value
     // To do not keep it in memory
-    fn SetDeselected(&self) -> windows_core::Result<()> {
+    fn SetDeselected(&self) -> windows::core::Result<()> {
         // If values[<index>] is the password field, clear it
         let mut values = self.this.values.borrow_mut();
         if !values[UdsFieldId::Password as usize].is_empty() {
@@ -161,7 +163,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
                 events.SetFieldString(
                     &icred,
                     UdsFieldId::Password as u32,
-                    windows_core::PCWSTR::null(), // Empty string
+                    windows::core::PCWSTR::null(), // Empty string
                 )?;
             }
         }
@@ -174,7 +176,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         dwfieldid: u32,
         pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
         pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
@@ -186,7 +188,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     }
 
     /// Retrieves the string value of a field.
-    fn GetStringValue(&self, dwfieldid: u32) -> windows_core::Result<PWSTR> {
+    fn GetStringValue(&self, dwfieldid: u32) -> windows::core::Result<PWSTR> {
         if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
@@ -204,7 +206,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     }
 
     // Get the bitmap shown on the user tile
-    fn GetBitmapValue(&self, dwfieldid: u32) -> windows_core::Result<HBITMAP> {
+    fn GetBitmapValue(&self, dwfieldid: u32) -> windows::core::Result<HBITMAP> {
         if dwfieldid == UdsFieldId::TileImage as u32 {
             unsafe {
                 LoadImageW(
@@ -225,14 +227,14 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn GetCheckboxValue(
         &self,
         _dwfieldid: u32,
-        _pbchecked: *mut windows_core::BOOL,
+        _pbchecked: *mut windows::core::BOOL,
         _ppszlabel: *mut PWSTR,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
 
     // This returns the field id that will have the submit button next to it
-    fn GetSubmitButtonValue(&self, dwfieldid: u32) -> windows_core::Result<u32> {
+    fn GetSubmitButtonValue(&self, dwfieldid: u32) -> windows::core::Result<u32> {
         if dwfieldid == UdsFieldId::SubmitButton as u32 {
             return Ok(UdsFieldId::Password as u32);
         } else {
@@ -245,18 +247,18 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _dwfieldid: u32,
         _pcitems: *mut u32,
         _pdwselecteditem: *mut u32,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
-    fn GetComboBoxValueAt(&self, _dwfieldid: u32, _dwitem: u32) -> windows_core::Result<PWSTR> {
+    fn GetComboBoxValueAt(&self, _dwfieldid: u32, _dwitem: u32) -> windows::core::Result<PWSTR> {
         Err(E_NOTIMPL.into())
     }
 
     fn SetStringValue(
         &self,
         dwfieldid: u32,
-        psz: &windows_core::PCWSTR,
-    ) -> windows_core::Result<()> {
+        psz: &windows::core::PCWSTR,
+    ) -> windows::core::Result<()> {
         debug_dev!(
             "SetStringValue called for field ID: {}; {:?}",
             dwfieldid,
@@ -281,8 +283,8 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn SetCheckboxValue(
         &self,
         _dwfieldid: u32,
-        _bchecked: windows_core::BOOL,
-    ) -> windows_core::Result<()> {
+        _bchecked: windows::core::BOOL,
+    ) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
 
@@ -290,11 +292,11 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         _dwfieldid: u32,
         _dwselecteditem: u32,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
 
-    fn CommandLinkClicked(&self, _dwfieldid: u32) -> windows_core::Result<()> {
+    fn CommandLinkClicked(&self, _dwfieldid: u32) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
 
@@ -306,21 +308,68 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         pcpcs: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _ppszoptionalstatustext: *mut PWSTR,
         _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         debug_dev!("GetSerialization called");
-        let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON::default();
-        let logon = &interactive_logon.Logon;
+
+        // Store LSA strings and ensure they live long enough
+        let lsa_username = crate::util::comstr::LsaUnicodeString::new(
+            &self.this.credential.lock().unwrap().username,
+        );
+        let lsa_password = crate::util::comstr::LsaUnicodeString::new(&String::from_utf8_lossy(
+            &self.this.credential.lock().unwrap().password,
+        ));
+        let lsa_domain = crate::util::comstr::LsaUnicodeString::new(
+            &self.this.credential.lock().unwrap().domain,
+        );
+
+        let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
+            Logon: KERB_INTERACTIVE_LOGON {
+                MessageType: if self.cpus == CPUS_UNLOCK_WORKSTATION {
+                    KerbWorkstationUnlockLogon
+                } else {
+                    KerbInteractiveLogon
+                },
+                LogonDomainName: *lsa_domain.as_lsa(),
+                UserName: *lsa_username.as_lsa(),
+                Password: *lsa_password.as_lsa(),
+            },
+            LogonId: Default::default(),
+        };
+        let (pkiul_out, cb_total) = lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)?;
+        debug_dev!(
+            "Packed KERB_INTERACTIVE_UNLOCK_LOGON: {:?}: {}",
+            pkiul_out,
+            cb_total
+        );
+
+        unsafe { *pcpcs }.rgbSerialization = pkiul_out;
+        unsafe { *pcpcs }.cbSerialization = cb_total;
+
+        unsafe { *pcpcs }.ulAuthenticationPackage = match lsa::retrieve_negotiate_auth_package() {
+            Ok(package) => package,
+            Err(err) => {
+                error!("Failed to retrieve negotiate auth package: {}", err);
+                return Err(err);
+            }
+        };
+        unsafe { *pcpcs }.clsidCredentialProvider = CLSID_UDS_CREDENTIAL_PROVIDER;
+        unsafe { *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED };
 
         Ok(())
     }
 
     fn ReportResult(
         &self,
-        _ntsstatus: NTSTATUS,
-        _ntssubstatus: NTSTATUS,
+        ntsstatus: NTSTATUS,
+        ntssubstatus: NTSTATUS,
         _ppszoptionalstatustext: *mut PWSTR,
         _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
+        if ntsstatus.is_err() || ntssubstatus.is_err() {
+            error!("Login failed: {} {}", ntsstatus.0, ntssubstatus.0);
+        } else {
+            info!("Login succeeded: {} {}", ntsstatus.0, ntssubstatus.0);
+        }   
         Ok(())
     }
 }

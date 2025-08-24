@@ -21,17 +21,17 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         &self,
         _cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         _dwflags: u32,
-        _rgclsidproviders: *const windows_core::GUID,
-        _rgballow: *mut windows_core::BOOL,
+        _rgclsidproviders: *const windows::core::GUID,
+        _rgballow: *mut windows::core::BOOL,
         _cproviders: u32,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Ok(())
     }
     fn UpdateRemoteCredential(
         &self,
         _pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-    ) -> windows_core::Result<()> {
+    ) -> windows::core::Result<()> {
         Ok(())
     }
 }

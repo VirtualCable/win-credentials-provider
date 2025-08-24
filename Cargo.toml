@@ -26,6 +26,7 @@ windows = { version = "0.61.3", features = [
     "Win32_System_SystemServices",
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_WindowsProgramming",
 
     "Win32_System_Pipes",
     "Win32_Storage_FileSystem",
@@ -50,6 +51,9 @@ env_logger = "0.11.8"
 # For Protocol Buffers
 prost = "0.14.1"
 prost-types = "0.14.1"
+# Zeroize, for securing data
+zeroize = "1.8.1"
+
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.
 opt-level = "z" # Optimize for size.

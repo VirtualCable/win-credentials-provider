@@ -51,6 +51,11 @@ impl CredentialFieldDescriptor {
             Ok(ptr)
         }
     }
+
+    pub fn is_text_field(&self) -> bool {
+        self.field_type == windows::Win32::UI::Shell::CPFT_EDIT_TEXT
+            || self.field_type == windows::Win32::UI::Shell::CPFT_PASSWORD_TEXT
+    }
 }
 
 #[allow(dead_code)]

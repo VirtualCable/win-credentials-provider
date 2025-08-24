@@ -22,7 +22,7 @@ pub static CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS: [CredentialFieldDescriptor;
     },
     CredentialFieldDescriptor {
         field_id: UdsFieldId::Username as u32,
-        field_type: windows::Win32::UI::Shell::CPFT_LARGE_TEXT,
+        field_type: windows::Win32::UI::Shell::CPFT_EDIT_TEXT,
         label: "Username",
         guid: GUID::zeroed(),
         state: CPFS_DISPLAY_IN_BOTH,

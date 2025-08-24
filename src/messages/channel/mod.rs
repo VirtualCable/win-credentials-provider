@@ -46,6 +46,15 @@ pub struct ChannelServer {
 
 #[allow(dead_code)]
 impl ChannelServer {
+    pub fn default() -> Self {
+        Self {
+            handle: SafeHandle::new(INVALID_HANDLE_VALUE),
+            stop_flag: Arc::new(AtomicBool::new(true)),
+            request: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            no_data_since: Arc::new(Mutex::new(None)),
+        }
+    }
+
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
     }

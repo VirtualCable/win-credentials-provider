@@ -46,7 +46,7 @@ struct Creds {
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
     values: RefCell<Vec<String>>, // Array containing the values of the fields
-    cred_prov_events: RefCell<Option<ICredentialProviderCredentialEvents>>, // Optional events for the credential provider
+    cred_events: RefCell<Option<ICredentialProviderCredentialEvents>>, // Optional events for the credential provider
     credential: Arc<Mutex<Creds>>,                                          // Actual credentials
 }
 
@@ -62,12 +62,22 @@ impl UDSCredential {
         Self {
             cpus: CPUS_LOGON,
             values: RefCell::new(vec![String::new(); UdsFieldId::NumFields as usize]),
-            cred_prov_events: RefCell::new(None),
+            cred_events: RefCell::new(None),
             credential: Arc::new(Mutex::new(Creds {
                 username: String::new(),
                 password: Zeroizing::new(Vec::new()),
                 domain: String::new(),
             })),
+        }
+    }
+    pub fn reset(&mut self) {
+        let mut credential = self.credential.lock().unwrap();
+        credential.username.clear();
+        credential.password.zeroize();
+        credential.domain.clear();
+        let mut values = self.values.borrow_mut();
+        for v in values.iter_mut() {
+            v.clear();
         }
     }
 
@@ -109,14 +119,14 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
     ) -> windows::core::Result<()> {
         debug!("Advising credential provider events");
-        *self.this.cred_prov_events.borrow_mut() = pcpce.clone();
+        *self.cred_events.borrow_mut() = pcpce.clone();
         Ok(())
     }
 
     // Release the callback
     fn UnAdvise(&self) -> windows::core::Result<()> {
         debug!("Unadvising credential provider events");
-        self.this.cred_prov_events.borrow_mut().take();
+        self.cred_events.borrow_mut().take();
         Ok(())
     }
 
@@ -125,7 +135,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn SetSelected(&self) -> windows::core::Result<windows::core::BOOL> {
         // If we have an username, copy it to values
         let username: String = {
-            let credential = self.this.credential.lock().unwrap();
+            let credential = self.credential.lock().unwrap();
             if credential.username.is_empty() {
                 "".to_string()
             } else {
@@ -143,7 +153,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             }
         };
         if username.len() > 0 {
-            self.this.values.borrow_mut()[UdsFieldId::Username as usize] = username;
+            self.values.borrow_mut()[UdsFieldId::Username as usize] = username;
         }
         Ok(false.into())
     }
@@ -152,11 +162,11 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // To do not keep it in memory
     fn SetDeselected(&self) -> windows::core::Result<()> {
         // If values[<index>] is the password field, clear it
-        let mut values = self.this.values.borrow_mut();
+        let mut values = self.values.borrow_mut();
         if !values[UdsFieldId::Password as usize].is_empty() {
             values[UdsFieldId::Password as usize].zeroize(); // Clear the password field
         }
-        let cred_prov_events = self.this.cred_prov_events.borrow();
+        let cred_prov_events = self.cred_events.borrow();
         if let Some(events) = &*cred_prov_events {
             unsafe {
                 let icred: ICredentialProviderCredential = (*self).clone().into();
@@ -192,7 +202,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
-        let values = self.this.values.borrow();
+        let values = self.values.borrow();
         let value = values[dwfieldid as usize].as_str();
         debug!(
             "GetStringValue called for field ID: {}; {}",
@@ -270,7 +280,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             if descriptor.is_text_field() {
                 let new_value = crate::util::comstr::pcwstr_to_string(*psz);
                 debug_dev!("New value: {}", new_value);
-                self.this.values.borrow_mut()[dwfieldid as usize] = new_value;
+                self.values.borrow_mut()[dwfieldid as usize] = new_value;
                 return Ok(());
             } else {
                 debug_dev!("Field is not a text field");
@@ -313,13 +323,13 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
         // Store LSA strings and ensure they live long enough
         let lsa_username = crate::util::comstr::LsaUnicodeString::new(
-            &self.this.credential.lock().unwrap().username,
+            &self.credential.lock().unwrap().username,
         );
         let lsa_password = crate::util::comstr::LsaUnicodeString::new(&String::from_utf8_lossy(
-            &self.this.credential.lock().unwrap().password,
+            &self.credential.lock().unwrap().password,
         ));
         let lsa_domain = crate::util::comstr::LsaUnicodeString::new(
-            &self.this.credential.lock().unwrap().domain,
+            &self.credential.lock().unwrap().domain,
         );
 
         let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {

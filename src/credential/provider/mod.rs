@@ -1,12 +1,19 @@
+use std::{cell::RefCell, sync::{Mutex, Arc}};
+
 use windows::{
-    Win32::Foundation::E_INVALIDARG,
-    Win32::UI::Shell::{
-        CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
-        CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProvider, ICredentialProvider_Impl,
-        ICredentialProviderCredential, ICredentialProviderEvents,
+    Win32::{
+        Foundation::E_INVALIDARG,
+        UI::Shell::{
+            CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
+            CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
+            CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProvider, ICredentialProvider_Impl,
+            ICredentialProviderCredential, ICredentialProviderEvents,
+        },
     },
     core::*,
 };
+
+use crate::debug_dev;
 
 use super::credential::UDSCredential;
 
@@ -15,13 +22,15 @@ pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
 
 #[implement(ICredentialProvider)]
 pub struct UDSCredentialsProvider {
-    credential: UDSCredential,
+    credential: Arc<Mutex<UDSCredential>>,
+    cred_prov_events: Arc<Mutex<Option<ICredentialProviderEvents>>>,
 }
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {
         Self {
-            credential: UDSCredential::new(),
+            credential: Arc::new(Mutex::new(UDSCredential::new())),
+            cred_prov_events: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -29,11 +38,21 @@ impl UDSCredentialsProvider {
 impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     fn SetUsageScenario(
         &self,
-        _cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        _dwflags: u32,
+        cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+        dwflags: u32,
     ) -> windows::core::Result<()> {
-        Ok(())
+        debug_dev!("SetUsageScenario called: {:?} {}", cpus, dwflags);
+        match cpus {
+            CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
+                self.credential.lock().unwrap().reset();
+                self.credential.lock().unwrap().set_usage_scenario(cpus);
+                Ok(())
+            }
+            CPUS_CREDUI | CPUS_CHANGE_PASSWORD => Ok(()),
+            _ => Err(E_INVALIDARG.into()),
+        }
     }
+
     fn SetSerialization(
         &self,
         _pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
@@ -42,12 +61,15 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     }
     fn Advise(
         &self,
-        _pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
+        pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
         _upadvisecontext: usize,
     ) -> windows::core::Result<()> {
+        // Store for using later
+        *self.cred_prov_events.lock().unwrap() = pcpe.clone();
         Ok(())
     }
     fn UnAdvise(&self) -> windows::core::Result<()> {
+        *self.cred_prov_events.lock().unwrap() = None;
         Ok(())
     }
     fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
@@ -69,7 +91,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     }
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
         if dwindex == 0 {
-            Ok(self.credential.clone().into())
+            Ok(self.credential.lock().unwrap().clone().into())
         } else {
             Err(windows::core::Error::from_hresult(E_INVALIDARG))
         }

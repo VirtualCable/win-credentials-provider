@@ -143,7 +143,7 @@ pub fn retrieve_negotiate_auth_package() -> windows::core::Result<u32> {
     if status.to_hresult().is_err() {
         return Err(status.into());
     }
-    let kerb_name = crate::util::comstr::LsaString::from_pcstr(NEGOSSP_NAME_A);
+    let kerb_name = crate::util::com::LsaString::from_pcstr(NEGOSSP_NAME_A);
 
     let mut authenticationpackage = 0u32;
     // Convert LSA_UNICODE_STRING to LSA_STRING

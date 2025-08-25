@@ -38,7 +38,7 @@ impl AuthRequest {
 
 #[derive(Debug, Clone)]
 pub struct ChannelServer {
-    handle: SafeHandle,
+    pipe_handle: SafeHandle,
     stop_flag: Arc<AtomicBool>,
     request: Arc<Mutex<Option<AuthRequest>>>,
     no_data_since: Arc<Mutex<Option<Instant>>>,
@@ -48,7 +48,7 @@ pub struct ChannelServer {
 impl ChannelServer {
     pub fn default() -> Self {
         Self {
-            handle: SafeHandle::new(INVALID_HANDLE_VALUE),
+            pipe_handle: SafeHandle::new(INVALID_HANDLE_VALUE),
             stop_flag: Arc::new(AtomicBool::new(true)),
             request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             no_data_since: Arc::new(Mutex::new(None)),
@@ -98,8 +98,8 @@ impl ChannelServer {
                             server.disconnect_pipe();
                             // Regenerate named pipe to avoid being blocked
                             // And close the named pipe, and open it again
-                            server.handle.clear(); // Ensure handle is cleared/closed
-                            server.handle.set(Self::create_pipe(&pipe_name).unwrap());
+                            server.pipe_handle.clear(); // Ensure handle is cleared/closed
+                            server.pipe_handle.set(Self::create_pipe(&pipe_name).unwrap());
                         }
                     }
                 }
@@ -143,7 +143,7 @@ impl ChannelServer {
         let handle = Self::create_pipe(name)?;
 
         Ok(Self {
-            handle: SafeHandle::new(handle), // We will take care of releasing it on drop
+            pipe_handle: SafeHandle::new(handle), // We will take care of releasing it on drop
             stop_flag: Arc::new(AtomicBool::new(false)),
             request: std::sync::Arc::new(std::sync::Mutex::new(None)),
             no_data_since: Arc::new(Mutex::new(None)),
@@ -154,7 +154,7 @@ impl ChannelServer {
         let mut len_buf = [0u8; 4];
         let mut read = 0u32;
 
-        let res = unsafe { ReadFile(self.handle.get(), Some(&mut len_buf), Some(&mut read), None) };
+        let res = unsafe { ReadFile(self.pipe_handle.get(), Some(&mut len_buf), Some(&mut read), None) };
 
         debug_dev!("Read message length: {:?}, res: {:?}", &len_buf[..], res);
 
@@ -209,7 +209,7 @@ impl ChannelServer {
 
         let mut buf = vec![0u8; msg_len];
         unsafe {
-            ReadFile(self.handle.get(), Some(&mut buf), Some(&mut read), None)
+            ReadFile(self.pipe_handle.get(), Some(&mut buf), Some(&mut read), None)
                 .ok()
                 .context("Failed to read message body")?;
         }
@@ -233,7 +233,7 @@ impl ChannelServer {
 
         unsafe {
             WriteFile(
-                self.handle.get(),
+                self.pipe_handle.get(),
                 Some(&mut len_buf),
                 Some(&mut written),
                 None,
@@ -245,7 +245,7 @@ impl ChannelServer {
                 return Err(anyhow::anyhow!("Failed to write complete message length"));
             }
 
-            WriteFile(self.handle.get(), Some(&mut buf), Some(&mut written), None)
+            WriteFile(self.pipe_handle.get(), Some(&mut buf), Some(&mut written), None)
                 .ok()
                 .context("Failed to write message body")?;
             // Ensure the entire message is written
@@ -275,7 +275,7 @@ impl ChannelServer {
 
     fn disconnect_pipe(&self) {
         // Disconnect the client, but do not destroy the Pipe itself
-        let _ = unsafe { DisconnectNamedPipe(self.handle.get()) };
+        let _ = unsafe { DisconnectNamedPipe(self.pipe_handle.get()) };
         debug_dev!("Disconnected named pipe");
     }
 
@@ -285,7 +285,7 @@ impl ChannelServer {
 impl Drop for ChannelServer {
     fn drop(&mut self) {
         debug_dev!("Dropping ChannelServer, cleaning up resources");
-        self.handle.clear(); // Early drop
+        self.pipe_handle.clear(); // Early drop
     }
 }
 

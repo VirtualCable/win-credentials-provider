@@ -1,7 +1,7 @@
 use super::*;
 
 use crate::util::{
-    comstr::{LsaUnicodeString, lsa_unicode_string_to_string},
+    com::{LsaUnicodeString, lsa_unicode_string_to_string},
     logger::setup_logging,
 };
 

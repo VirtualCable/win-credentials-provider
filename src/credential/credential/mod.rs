@@ -1,9 +1,6 @@
-use std::{
-    cell::RefCell,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, RwLock};
 
-use log::{debug, info, error};
+use log::{debug, error, info};
 
 use windows::{
     Win32::{
@@ -13,6 +10,7 @@ use windows::{
             KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
             KerbWorkstationUnlockLogon,
         },
+        System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, IGlobalInterfaceTable},
         UI::{
             Shell::{
                 CPGSR_RETURN_CREDENTIAL_FINISHED, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
@@ -29,7 +27,7 @@ use windows::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, dll};
+use crate::{credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, dll, util::com};
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, lsa, types::UdsFieldId};
 
@@ -45,14 +43,14 @@ struct Creds {
 #[derive(Clone)]
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-    values: RefCell<Vec<String>>, // Array containing the values of the fields
-    cred_events: RefCell<Option<ICredentialProviderCredentialEvents>>, // Optional events for the credential provider
-    credential: Arc<Mutex<Creds>>,                                          // Actual credentials
+    values: Arc<RwLock<Vec<String>>>, // Array containing the values of the fields
+    credential: Arc<RwLock<Creds>>,   // Actual credentials
+    cookie: Arc<RwLock<Option<u32>>>,
 }
 
 impl Drop for UDSCredential {
     fn drop(&mut self) {
-        let mut credential = self.credential.lock().unwrap();
+        let mut credential = self.credential.write().unwrap();
         credential.password.zeroize(); // Clear the password on drop
     }
 }
@@ -61,21 +59,24 @@ impl UDSCredential {
     pub fn new() -> Self {
         Self {
             cpus: CPUS_LOGON,
-            values: RefCell::new(vec![String::new(); UdsFieldId::NumFields as usize]),
-            cred_events: RefCell::new(None),
-            credential: Arc::new(Mutex::new(Creds {
+            values: Arc::new(RwLock::new(vec![
+                String::new();
+                UdsFieldId::NumFields as usize
+            ])),
+            credential: Arc::new(RwLock::new(Creds {
                 username: String::new(),
                 password: Zeroizing::new(Vec::new()),
                 domain: String::new(),
             })),
+            cookie: Arc::new(RwLock::new(None)),
         }
     }
     pub fn reset(&mut self) {
-        let mut credential = self.credential.lock().unwrap();
+        let mut credential = self.credential.write().unwrap();
         credential.username.clear();
         credential.password.zeroize();
         credential.domain.clear();
-        let mut values = self.values.borrow_mut();
+        let mut values = self.values.write().unwrap();
         for v in values.iter_mut() {
             v.clear();
         }
@@ -84,7 +85,7 @@ impl UDSCredential {
     pub fn set_credentials(&mut self, username: &str, password: &str, domain: &str) {
         // If no domain, use GetComputerNameW
         // Ensure previous password is cleared with zero values before
-        let mut credential = self.credential.lock().unwrap();
+        let mut credential = self.credential.write().unwrap();
         credential.password.zeroize();
         let temp = password.as_bytes().to_vec();
         credential.password = Zeroizing::new(temp);
@@ -96,7 +97,7 @@ impl UDSCredential {
         }
 
         credential.username = username.to_string();
-        let mut values = self.values.borrow_mut();
+        let mut values = self.values.write().unwrap();
         *values = (0..UdsFieldId::NumFields as usize)
             .map(|i| match i {
                 x if x == UdsFieldId::SubmitButton as usize => "Submit".into(),
@@ -109,6 +110,15 @@ impl UDSCredential {
     pub fn set_usage_scenario(&mut self, cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO) {
         self.cpus = cpus;
     }
+
+    pub fn get_icredential_provider_credential_event(
+        &self,
+    ) -> Option<ICredentialProviderCredentialEvents> {
+        if let Some(cookie) = *self.cookie.read().unwrap() {
+            return com::get_from_git(cookie).ok();
+        }
+        None
+    }
 }
 
 impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
@@ -118,15 +128,19 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
     ) -> windows::core::Result<()> {
-        debug!("Advising credential provider events");
-        *self.cred_events.borrow_mut() = pcpce.clone();
+        debug_dev!("Advising credential provider events");
+        let cookie = com::register_in_git(pcpce.unwrap().clone())?;
+        *self.cookie.write().unwrap() = Some(cookie);
         Ok(())
     }
 
     // Release the callback
     fn UnAdvise(&self) -> windows::core::Result<()> {
-        debug!("Unadvising credential provider events");
-        self.cred_events.borrow_mut().take();
+        debug_dev!("Unadvising credential provider events");
+        if let Some(cookie) = *self.cookie.write().unwrap() {
+            com::unregister_from_git(cookie)?;
+            *self.cookie.write().unwrap() = None;
+        }
         Ok(())
     }
 
@@ -135,7 +149,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn SetSelected(&self) -> windows::core::Result<windows::core::BOOL> {
         // If we have an username, copy it to values
         let username: String = {
-            let credential = self.credential.lock().unwrap();
+            let credential = self.credential.read().unwrap();
             if credential.username.is_empty() {
                 "".to_string()
             } else {
@@ -153,7 +167,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             }
         };
         if username.len() > 0 {
-            self.values.borrow_mut()[UdsFieldId::Username as usize] = username;
+            self.values.write().unwrap()[UdsFieldId::Username as usize] = username;
         }
         Ok(false.into())
     }
@@ -162,20 +176,20 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // To do not keep it in memory
     fn SetDeselected(&self) -> windows::core::Result<()> {
         // If values[<index>] is the password field, clear it
-        let mut values = self.values.borrow_mut();
+        let mut values = self.values.write().unwrap();
         if !values[UdsFieldId::Password as usize].is_empty() {
             values[UdsFieldId::Password as usize].zeroize(); // Clear the password field
         }
-        let cred_prov_events = self.cred_events.borrow();
-        if let Some(events) = &*cred_prov_events {
+        let cred_prov_events = self.get_icredential_provider_credential_event();
+        if let Some(events) = cred_prov_events {
+            let icred: ICredentialProviderCredential = (*self).clone().into();
             unsafe {
-                let icred: ICredentialProviderCredential = (*self).clone().into();
                 events.SetFieldString(
                     &icred,
                     UdsFieldId::Password as u32,
                     windows::core::PCWSTR::null(), // Empty string
-                )?;
-            }
+                )
+            }?;
         }
         Ok(())
     }
@@ -202,14 +216,14 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
-        let values = self.values.borrow();
+        let values = self.values.read().unwrap();
         let value = values[dwfieldid as usize].as_str();
         debug!(
             "GetStringValue called for field ID: {}; {}",
             dwfieldid, value
         );
 
-        match crate::util::comstr::alloc_pwstr(value) {
+        match crate::util::com::alloc_pwstr(value) {
             Ok(pwstr) => Ok(pwstr),
             Err(_) => Err(E_INVALIDARG.into()),
         }
@@ -278,9 +292,9 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize];
             debug_dev!("Field descriptor: {:?}", descriptor);
             if descriptor.is_text_field() {
-                let new_value = crate::util::comstr::pcwstr_to_string(*psz);
+                let new_value = crate::util::com::pcwstr_to_string(*psz);
                 debug_dev!("New value: {}", new_value);
-                self.values.borrow_mut()[dwfieldid as usize] = new_value;
+                self.values.write().unwrap()[dwfieldid as usize] = new_value;
                 return Ok(());
             } else {
                 debug_dev!("Field is not a text field");
@@ -322,15 +336,13 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         debug_dev!("GetSerialization called");
 
         // Store LSA strings and ensure they live long enough
-        let lsa_username = crate::util::comstr::LsaUnicodeString::new(
-            &self.credential.lock().unwrap().username,
-        );
-        let lsa_password = crate::util::comstr::LsaUnicodeString::new(&String::from_utf8_lossy(
-            &self.credential.lock().unwrap().password,
+        let lsa_username =
+            crate::util::com::LsaUnicodeString::new(&self.credential.read().unwrap().username);
+        let lsa_password = crate::util::com::LsaUnicodeString::new(&String::from_utf8_lossy(
+            &self.credential.read().unwrap().password,
         ));
-        let lsa_domain = crate::util::comstr::LsaUnicodeString::new(
-            &self.credential.lock().unwrap().domain,
-        );
+        let lsa_domain =
+            crate::util::com::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
 
         let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
             Logon: KERB_INTERACTIVE_LOGON {
@@ -379,7 +391,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             error!("Login failed: {} {}", ntsstatus.0, ntssubstatus.0);
         } else {
             info!("Login succeeded: {} {}", ntsstatus.0, ntssubstatus.0);
-        }   
+        }
         Ok(())
     }
 }

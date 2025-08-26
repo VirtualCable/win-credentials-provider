@@ -37,7 +37,7 @@ pub fn load() -> HMODULE {
     let dll_file = dll_path();
     assert_file_exists(&dll_file);
 
-    let wide_path = widestring::U16CString::from_str(&dll_file.as_os_str().to_string_lossy())
+    let wide_path = widestring::U16CString::from_str(dll_file.as_os_str().to_string_lossy())
         .expect("Could not convert DLL path to wide string");
 
     unsafe { LoadLibraryW(PCWSTR::from_raw(wide_path.as_ptr())).unwrap() }
@@ -52,6 +52,7 @@ pub fn get_symbol(module: &HMODULE, name: &str) -> Result<unsafe extern "system"
     let pcstr = PCSTR::from_raw(cstr.as_ptr() as *const u8);
 
     if let Some(addr) = unsafe { GetProcAddress(*module, pcstr) } {
+        #[allow(clippy::missing_transmute_annotations)]
         Ok(unsafe { std::mem::transmute(addr) })
     } else {
         Err(Error::from_win32())

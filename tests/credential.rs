@@ -3,7 +3,7 @@ use std::mem::zeroed;
 use windows::Win32::Graphics::Gdi::{BITMAP, GetObjectW};
 
 mod utils;
-use win_cred_provider::credential::types::UdsFieldId;
+use win_cred_provider::credentials::types::UdsFieldId;
 
 #[test]
 fn test_get_bitmap_correct_field() -> windows::core::Result<()> {

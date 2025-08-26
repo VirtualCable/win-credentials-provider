@@ -96,9 +96,9 @@ impl HttpRequestClient {
 
     pub fn parse_url(url: &str) -> Result<(bool, String, String, u16)> {
         let (use_ssl, rest) = if url.starts_with("http://") {
-            (false, &url[7..])
+            (false, url.strip_prefix("http://").unwrap_or(""))
         } else if url.starts_with("https://") {
-            (true, &url[8..])
+            (true, url.strip_prefix("https://").unwrap_or(""))
         } else {
             anyhow::bail!("Invalid URL: {url}");
         };
@@ -126,6 +126,8 @@ impl HttpRequestClient {
         self.do_request("GET", use_ssl, &server, &path, port, headers, None)
     }
 
+    // We NEED as much args :)
+    #[allow(clippy::too_many_arguments)]
     pub fn do_request(
         &self,
         method: &str,
@@ -222,24 +224,24 @@ impl HttpRequestClient {
         );
 
         // Add headers
-        if let Some(headers) = headers {
-            if !headers.is_empty() {
-                let mut headers_str = String::new();
-                for (k, v) in headers {
-                    headers_str.push_str(&format!("{k}: {v}\r\n"));
-                }
-                let wide_headers = widestring::U16String::from_str(&headers_str);
-
-                unsafe {
-                    WinHttpAddRequestHeaders(
-                        hrequest.as_ptr(),
-                        wide_headers.as_slice(),
-                        WINHTTP_ADDREQ_FLAG_ADD,
-                    )
-                }
-                .ok()
-                .context("WinHttpAddRequestHeaders failed")?;
+        if let Some(headers) = headers
+            && !headers.is_empty()
+        {
+            let mut headers_str = String::new();
+            for (k, v) in headers {
+                headers_str.push_str(&format!("{k}: {v}\r\n"));
             }
+            let wide_headers = widestring::U16String::from_str(&headers_str);
+
+            unsafe {
+                WinHttpAddRequestHeaders(
+                    hrequest.as_ptr(),
+                    wide_headers.as_slice(),
+                    WINHTTP_ADDREQ_FLAG_ADD,
+                )
+            }
+            .ok()
+            .context("WinHttpAddRequestHeaders failed")?;
         }
 
         // Config SSL if needed
@@ -391,6 +393,12 @@ impl HttpRequestClient {
             body: body_str,
             headers: headers_map,
         })
+    }
+}
+
+impl Default for HttpRequestClient {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

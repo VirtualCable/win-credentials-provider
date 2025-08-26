@@ -15,6 +15,12 @@ impl UDSCredentialsFilter {
     }
 }
 
+impl Default for UDSCredentialsFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(non_snake_case)]
 impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
     fn Filter(

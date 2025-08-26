@@ -18,7 +18,7 @@ use windows::{
 
 use log::error;
 
-use crate::credential::credential::UDSCredential;
+use crate::credentials::credential::UDSCredential;
 use crate::debug_dev;
 
 pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
@@ -41,6 +41,7 @@ impl UDSCredentialsProvider {
             up_advise_context: Arc::new(RwLock::new(None)),
             stop_flag: Arc::new(AtomicBool::new(false)),
         };
+        // Start the async credentials receiver by the pipe processor
         me.async_creds_processor();
         me
     }
@@ -71,9 +72,10 @@ impl UDSCredentialsProvider {
 
     fn async_creds_processor(&self) {
         let cred_provider = self.clone();
+        let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
         std::thread::spawn(move || {
             let (thread_handle, channel_server) =
-                match crate::messages::channel::ChannelServer::run("") {
+                match crate::messages::channel::ChannelServer::run(&auth_token) {
                     Ok((thread_handle, channel_server)) => (thread_handle, channel_server),
                     Err(e) => {
                         error!("Failed to start ChannelServer: {:?}", e);
@@ -100,14 +102,20 @@ impl UDSCredentialsProvider {
     // Thread for running channel server and
 }
 
+impl Default for UDSCredentialsProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Drop for UDSCredentialsProvider {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
         // Unregister from GIT if needed
-        if let Some(cookie) = *self.cookie.read().unwrap() {
-            if let Err(e) = crate::util::com::unregister_from_git(cookie) {
-                error!("Failed to unregister from GIT: {:?}", e);
-            }
+        if let Some(cookie) = *self.cookie.read().unwrap()
+            && let Err(e) = crate::util::com::unregister_from_git(cookie)
+        {
+            error!("Failed to unregister from GIT: {:?}", e);
         }
     }
 }

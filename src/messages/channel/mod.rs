@@ -46,7 +46,7 @@ pub struct ChannelServer {
 
 #[allow(dead_code)]
 impl ChannelServer {
-    pub fn default() -> Self {
+    pub fn new() -> Self {
         Self {
             pipe_handle: SafeHandle::new(INVALID_HANDLE_VALUE),
             stop_flag: Arc::new(AtomicBool::new(true)),
@@ -99,7 +99,9 @@ impl ChannelServer {
                             // Regenerate named pipe to avoid being blocked
                             // And close the named pipe, and open it again
                             server.pipe_handle.clear(); // Ensure handle is cleared/closed
-                            server.pipe_handle.set(Self::create_pipe(&pipe_name).unwrap());
+                            server
+                                .pipe_handle
+                                .set(Self::create_pipe(&pipe_name).unwrap());
                         }
                     }
                 }
@@ -154,7 +156,14 @@ impl ChannelServer {
         let mut len_buf = [0u8; 4];
         let mut read = 0u32;
 
-        let res = unsafe { ReadFile(self.pipe_handle.get(), Some(&mut len_buf), Some(&mut read), None) };
+        let res = unsafe {
+            ReadFile(
+                self.pipe_handle.get(),
+                Some(&mut len_buf),
+                Some(&mut read),
+                None,
+            )
+        };
 
         debug_dev!("Read message length: {:?}, res: {:?}", &len_buf[..], res);
 
@@ -209,9 +218,14 @@ impl ChannelServer {
 
         let mut buf = vec![0u8; msg_len];
         unsafe {
-            ReadFile(self.pipe_handle.get(), Some(&mut buf), Some(&mut read), None)
-                .ok()
-                .context("Failed to read message body")?;
+            ReadFile(
+                self.pipe_handle.get(),
+                Some(&mut buf),
+                Some(&mut read),
+                None,
+            )
+            .ok()
+            .context("Failed to read message body")?;
         }
 
         let msg = T::decode(&*buf).ok().context("Failed to decode message")?;
@@ -234,7 +248,7 @@ impl ChannelServer {
         unsafe {
             WriteFile(
                 self.pipe_handle.get(),
-                Some(&mut len_buf),
+                Some(&len_buf),
                 Some(&mut written),
                 None,
             )
@@ -245,9 +259,14 @@ impl ChannelServer {
                 return Err(anyhow::anyhow!("Failed to write complete message length"));
             }
 
-            WriteFile(self.pipe_handle.get(), Some(&mut buf), Some(&mut written), None)
-                .ok()
-                .context("Failed to write message body")?;
+            WriteFile(
+                self.pipe_handle.get(),
+                Some(&buf),
+                Some(&mut written),
+                None,
+            )
+            .ok()
+            .context("Failed to write message body")?;
             // Ensure the entire message is written
             if written != buf.len() as u32 {
                 return Err(anyhow::anyhow!("Failed to write complete message body"));
@@ -280,6 +299,12 @@ impl ChannelServer {
     }
 
     // function that will run a thread that will process incomming messages until stopped
+}
+
+impl Default for ChannelServer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Drop for ChannelServer {

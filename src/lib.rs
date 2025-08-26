@@ -15,7 +15,7 @@ pub extern "system" fn DllMain(
     _lp_reserved: *mut core::ffi::c_void,
 ) -> BOOL {
     // Store the instance for later retrieval
-    dll::set_instance(hinst_dll);
+    globals::set_instance(hinst_dll);
     unsafe {
         match fdw_reason {
             DLL_PROCESS_ATTACH => {
@@ -35,13 +35,14 @@ pub extern "system" fn DllMain(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn DllCanUnloadNow() -> HRESULT {
-    if crate::dll::DLL_REF_COUNT.load(Ordering::SeqCst) == 0 {
+    if crate::globals::DLL_REF_COUNT.load(Ordering::SeqCst) == 0 {
         S_OK
     } else {
         S_FALSE
     }
 }
 
+#[allow(clippy::not_unsafe_ptr_arg_deref)]  // System calls cannot be unsafe :)
 #[unsafe(no_mangle)]
 pub extern "system" fn DllGetClassObject(
     rclsid: *const GUID,
@@ -50,7 +51,7 @@ pub extern "system" fn DllGetClassObject(
 ) -> HRESULT {
     util::logger::setup_logging("info");
     unsafe {
-        if *rclsid != crate::credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER {
+        if *rclsid != crate::credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
 
@@ -63,7 +64,7 @@ pub extern "system" fn DllGetClassObject(
 // ======== Modules ========
 // Public to use them in the integration tests
 pub mod classfactory;
-pub mod credential;
-pub mod dll;
+pub mod credentials;
+pub mod globals;
 pub mod messages;
 pub mod util;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::sync::{RwLock, Arc};
+use std::sync::{Arc, RwLock};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 
 #[derive(Debug)]
@@ -7,6 +7,10 @@ struct HandleInner {
     handle: HANDLE,
     owned: bool,
 }
+
+// I Swear that HANDLE can be sent between threads :)
+unsafe impl Send for HandleInner {}
+unsafe impl Sync for HandleInner {}
 
 #[derive(Debug, Clone)]
 pub struct SafeHandle {
@@ -39,26 +43,23 @@ impl SafeHandle {
         self.inner.read().unwrap().handle
     }
 
-    pub fn set(&self, handle: HANDLE) {
+    fn replace_handle(&self, new_handle: HANDLE, owned: bool) {
         let mut inner = self.inner.write().unwrap();
         if inner.owned && !inner.handle.is_invalid() {
             unsafe {
                 let _ = CloseHandle(inner.handle);
             }
         }
-        inner.handle = handle;
-        inner.owned = true;
+        inner.handle = new_handle;
+        inner.owned = owned;
+    }
+
+    pub fn set(&self, handle: HANDLE) {
+        self.replace_handle(handle, true);
     }
 
     pub fn set_borrowed(&self, handle: HANDLE) {
-        let mut inner = self.inner.write().unwrap();
-        if inner.owned && !inner.handle.is_invalid() {
-            unsafe {
-                let _ = CloseHandle(inner.handle);
-            }
-        }
-        inner.handle = handle;
-        inner.owned = false;
+        self.replace_handle(handle, false);
     }
 
     pub fn is_valid(&self) -> bool {
@@ -112,9 +113,6 @@ impl Drop for HandleInner {
     }
 }
 
-unsafe impl Send for SafeHandle {}
-unsafe impl Sync for SafeHandle {}
-
 // Implement only From for HANDLE -> SafeHandle (owned)
 impl TryFrom<HANDLE> for SafeHandle {
     type Error = anyhow::Error;
@@ -135,7 +133,7 @@ impl Default for SafeHandle {
         SafeHandle {
             inner: Arc::new(RwLock::new(HandleInner {
                 handle: HANDLE::default(),
-                owned: true,
+                owned: false,
             })),
         }
     }

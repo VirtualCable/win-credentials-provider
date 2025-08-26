@@ -10,7 +10,6 @@ use windows::{
             KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
             KerbWorkstationUnlockLogon,
         },
-        System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, IGlobalInterfaceTable},
         UI::{
             Shell::{
                 CPGSR_RETURN_CREDENTIAL_FINISHED, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
@@ -27,7 +26,7 @@ use windows::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{credential::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, dll, util::com};
+use crate::{credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, globals, util::com};
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, lsa, types::UdsFieldId};
 
@@ -121,6 +120,12 @@ impl UDSCredential {
     }
 }
 
+impl Default for UDSCredential {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // By this method, LogonUI gives us a callback so we can notify it of changes
     // If we need to update the UI, we can call the appropriate methods on the events object
@@ -166,7 +171,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
                 }
             }
         };
-        if username.len() > 0 {
+        if !username.is_empty() {
             self.values.write().unwrap()[UdsFieldId::Username as usize] = username;
         }
         Ok(false.into())
@@ -195,6 +200,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     }
 
     /// Retrieves the state of a field.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn GetFieldState(
         &self,
         dwfieldid: u32,
@@ -234,7 +240,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         if dwfieldid == UdsFieldId::TileImage as u32 {
             unsafe {
                 LoadImageW(
-                    Some(dll::get_instance()),
+                    Some(globals::get_instance()),
                     crate::util::helpers::make_int_resource(101),
                     IMAGE_BITMAP,
                     0,
@@ -260,7 +266,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // This returns the field id that will have the submit button next to it
     fn GetSubmitButtonValue(&self, dwfieldid: u32) -> windows::core::Result<u32> {
         if dwfieldid == UdsFieldId::SubmitButton as u32 {
-            return Ok(UdsFieldId::Password as u32);
+            Ok(UdsFieldId::Password as u32)
         } else {
             Err(E_INVALIDARG.into())
         }
@@ -301,7 +307,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             }
         }
 
-        return Err(E_INVALIDARG.into());
+        Err(E_INVALIDARG.into())
     }
 
     fn SetCheckboxValue(
@@ -326,6 +332,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
     // Collects the necessary data for serialization for the correct usage scenario
     // Logon passes back this credentials to the system to log on.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn GetSerialization(
         &self,
         pcpgsr: *mut CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
@@ -357,7 +364,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             },
             LogonId: Default::default(),
         };
-        let (pkiul_out, cb_total) = lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)?;
+        let (pkiul_out, cb_total) = unsafe { lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)? };
         debug_dev!(
             "Packed KERB_INTERACTIVE_UNLOCK_LOGON: {:?}: {}",
             pkiul_out,

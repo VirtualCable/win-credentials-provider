@@ -13,7 +13,7 @@ use windows::{
     core::*,
 };
 
-use win_cred_provider::{classfactory::ClassFactory, credential::credential::UDSCredential, dll};
+use win_cred_provider::{classfactory::ClassFactory, credentials::credential::UDSCredential, globals};
 
 const CLSID_TEST_FACTORY: GUID = GUID::from_u128(0x12481020_4080_1002_0040_080012345678);
 
@@ -29,7 +29,7 @@ impl ClassFactoryTest {
     pub fn new() -> Result<Self> {
         unsafe {
             // Initialize COM
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED).map(|| ())?;
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).map(|| ())?;
 
             // Register our ClassFactory temporarily in the COM table for this process
             let factory: IClassFactory = ClassFactory::new().into();
@@ -43,7 +43,7 @@ impl ClassFactoryTest {
 
             // Lets load the dll, so the resources are available for the tests
             let fake_dll = super::dll::load();
-            dll::set_instance(fake_dll.into());
+            globals::set_instance(fake_dll.into());
 
             // Keep factory object alive
             // Also the dll. Anyway, the dll has no Drop impl

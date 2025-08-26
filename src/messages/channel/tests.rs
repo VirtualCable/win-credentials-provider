@@ -118,7 +118,7 @@ fn test_invalid_auth_request() {
 
     let pipe_handle = open_client_pipe(PIPE_NAME);
 
-    let mut buf = rand::rng()
+    let buf = rand::rng()
         .sample_iter(&distr::Alphanumeric)
         .take(1024)
         .map(char::from)
@@ -132,12 +132,12 @@ fn test_invalid_auth_request() {
     unsafe {
         WriteFile(
             pipe_handle.get(),
-            Some(&mut len_buf),
+            Some(&len_buf),
             Some(&mut written),
             None,
         )
         .unwrap();
-        WriteFile(pipe_handle.get(), Some(&mut buf), Some(&mut written), None).unwrap();
+        WriteFile(pipe_handle.get(), Some(&buf), Some(&mut written), None).unwrap();
     }
 
     // Should not have any request in a timeout
@@ -214,7 +214,7 @@ fn test_message_too_large() {
     let pipe_handle = open_client_pipe(PIPE_NAME);
 
     // Mensaje de tamaño excesivo
-    let mut oversized_payload = vec![b'A'; consts::MAX_MESSAGE_SIZE + 100];
+    let oversized_payload = vec![b'A'; consts::MAX_MESSAGE_SIZE + 100];
     let mut len_buf = Vec::new();
     len_buf
         .write_u32::<LittleEndian>(oversized_payload.len() as u32)
@@ -224,14 +224,14 @@ fn test_message_too_large() {
     unsafe {
         WriteFile(
             pipe_handle.get(),
-            Some(&mut len_buf),
+            Some(&len_buf),
             Some(&mut written),
             None,
         )
         .unwrap();
         let result = WriteFile(
             pipe_handle.get(),
-            Some(&mut oversized_payload),
+            Some(&oversized_payload),
             Some(&mut written),
             None,
         );
@@ -261,7 +261,7 @@ pub fn test_cannot_dos_auth_request() {
 
     let pipe_handle = open_client_pipe(PIPE_NAME);
 
-    let mut oversized_payload = vec![b'A'; consts::MAX_MESSAGE_SIZE + 100];
+    let oversized_payload = vec![b'A'; consts::MAX_MESSAGE_SIZE + 100];
     let mut len_buf = Vec::new();
     len_buf
         .write_u32::<LittleEndian>(oversized_payload.len() as u32)
@@ -271,14 +271,14 @@ pub fn test_cannot_dos_auth_request() {
     unsafe {
         WriteFile(
             pipe_handle.get(),
-            Some(&mut len_buf),
+            Some(&len_buf),
             Some(&mut written),
             None,
         )
         .unwrap();
         let result = WriteFile(
             pipe_handle.get(),
-            Some(&mut oversized_payload),
+            Some(&oversized_payload),
             Some(&mut written),
             None,
         );
@@ -375,7 +375,7 @@ fn open_client_pipe(pipe_name: &str) -> SafeHandle {
 
 fn open_client(pipe_name: &str) -> SafeHandle {
     let pipe_wide = widestring::U16CString::from_str(pipe_name).unwrap();
-    let pipe_handle = SafeHandle::new(
+    SafeHandle::new(
         match unsafe {
             CreateFileW(
                 PCWSTR::from_raw(pipe_wide.as_ptr()),
@@ -393,9 +393,7 @@ fn open_client(pipe_name: &str) -> SafeHandle {
                 INVALID_HANDLE_VALUE
             }
         },
-    );
-
-    pipe_handle
+    )
 }
 
 fn write_pipe_auth_request_with_auth_req(handle: &SafeHandle, msg: &AuthRequest) -> Result<()> {
@@ -407,10 +405,10 @@ fn write_pipe_auth_request_with_auth_req(handle: &SafeHandle, msg: &AuthRequest)
 
     let mut written = 0u32;
     unsafe {
-        WriteFile(handle.get(), Some(&mut len_buf), Some(&mut written), None)
+        WriteFile(handle.get(), Some(&len_buf), Some(&mut written), None)
             .ok()
             .context("Failed to write message length")?;
-        WriteFile(handle.get(), Some(&mut buf), Some(&mut written), None)
+        WriteFile(handle.get(), Some(&buf), Some(&mut written), None)
             .ok()
             .context("Failed to write message body")?;
     }
@@ -436,9 +434,8 @@ fn check_auth_request(server: &ChannelServer, expected_token: &str) -> AuthReque
             panic!("Timeout waiting for auth request");
         }
         count += 1;
-        let req = server.get_request();
-        if req.is_some() {
-            break req.unwrap();
+        if let Some(req) = server.get_request() {
+            break req;
         }
         std::thread::sleep(std::time::Duration::from_millis(300));
     };

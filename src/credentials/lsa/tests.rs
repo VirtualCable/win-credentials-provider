@@ -26,13 +26,12 @@ fn kerb_interactive_unlock_test(username: &str, password: &str, domain: &str) {
     };
 
     // Pack the logon
-    let (packed, size) = kerb_interactive_unlock_logon_pack(&logon).unwrap();
+    let (packed, size) = unsafe { kerb_interactive_unlock_logon_pack(&logon) }.unwrap();
 
     assert!(!packed.is_null());
 
     // Cast to a KERB_INTERACTIVE_UNLOCK_LOGON
-    let packed =
-        packed.cast::<KERB_INTERACTIVE_UNLOCK_LOGON>() as *mut KERB_INTERACTIVE_UNLOCK_LOGON;
+    let packed = packed.cast::<KERB_INTERACTIVE_UNLOCK_LOGON>();
 
     // Compose an HEX string of the packed data, with the size "size"
     // To help debugging if needed
@@ -99,7 +98,7 @@ fn test_kerb_interactive_unlock_logon_unpack_in_place() {
     ];
 
     // Unpack the logon
-    let logon = kerb_interactive_unlock_logon_unpack_in_place(data.as_ptr() as *mut u8);
+    let logon = unsafe { kerb_interactive_unlock_logon_unpack_in_place(data.as_ptr() as *mut u8) };
 
     // Validate the unpacked data
     assert_eq!(logon.Logon.MessageType, KerbInteractiveLogon);

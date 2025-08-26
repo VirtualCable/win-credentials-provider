@@ -12,7 +12,7 @@ fn main() {
     std::fs::create_dir_all(&out_dir).unwrap();
 
     prost_build::Config::new()
-        .btree_map(&["."])
+        .btree_map(["."])
         .out_dir(out_dir)
         .compile_protos(&["protobuf/auth.proto"], &["protobuf"])
         .unwrap();

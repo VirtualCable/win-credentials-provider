@@ -6,11 +6,11 @@ use windows::{
     core::*,
 };
 
-use crate::dll::{dll_add_ref, dll_release};
+use crate::globals::{dll_add_ref, dll_release};
 
 // Implementaciones concretas
-use crate::credential::provider::UDSCredentialsProvider;
-use crate::credential::filter::UDSCredentialsFilter;
+use crate::credentials::provider::UDSCredentialsProvider;
+use crate::credentials::filter::UDSCredentialsFilter;
 
 #[implement(IClassFactory)]
 pub struct ClassFactory;
@@ -21,8 +21,16 @@ impl ClassFactory {
     }
 }
 
+impl Default for ClassFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(non_snake_case)]
 impl IClassFactory_Impl for ClassFactory_Impl {
+    // COM need the signature as is. Cannot mark as unsafe
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn CreateInstance(
         &self,
         punkouter: Ref<'_, IUnknown>,
@@ -30,11 +38,11 @@ impl IClassFactory_Impl for ClassFactory_Impl {
         ppvobject: *mut *mut core::ffi::c_void,
     ) -> Result<()> {
         unsafe {
-            // Agregación no soportada
+            // Aggregation not supported
             if !punkouter.is_null() {
                 return Err(CLASS_E_NOAGGREGATION.into());
             }
-            // Validación de punteros
+            // Pointer validation
             if ppvobject.is_null() || riid.is_null() {
                 return Err(E_INVALIDARG.into());
             }

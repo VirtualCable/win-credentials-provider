@@ -13,10 +13,15 @@ use windows::{
 
 use crate::debug_dev;
 
-// As the documentation:
-// WinLogon and LSA consume "packed" KERB_INTERACTIVE_UNLOCK_LOGONs
-// This is basically the struct + all strings concatenated on a single buffer alloc
-pub fn kerb_interactive_unlock_logon_pack(
+/// Packs a `KERB_INTERACTIVE_UNLOCK_LOGON` struct and its strings into a single buffer allocation.
+/// 
+/// WinLogon and LSA consume "packed" KERB_INTERACTIVE_UNLOCK_LOGONs.
+/// This is basically the struct + all strings concatenated on a single buffer alloc.
+/// 
+/// # Safety
+/// The caller must ensure that the provided `logon` reference is valid and that the returned pointer is properly managed and freed.
+/// Normally, the returned value should be used as output to COM so COM will release it.
+pub unsafe fn kerb_interactive_unlock_logon_pack(
     logon: &KERB_INTERACTIVE_UNLOCK_LOGON,
 ) -> windows::core::Result<(*mut u8, u32)> {
     let pkil_in = &logon.Logon;
@@ -46,7 +51,7 @@ pub fn kerb_interactive_unlock_logon_pack(
 
     // Basic copy of fixed fields
     unsafe {
-        (*pkiul_out).Logon.MessageType = (*pkil_in).MessageType;
+        (*pkiul_out).Logon.MessageType = pkil_in.MessageType;
     }
 
     // Internal helper to copy an LSA_UNICODE_STRING
@@ -69,7 +74,7 @@ pub fn kerb_interactive_unlock_logon_pack(
 
         *dst_struct = *src;
         // Offset relative to the start of the struct
-        dst_struct.Buffer = PWSTR(unsafe { (*buf_cursor).offset_from(base) as isize as *mut u16 });
+        dst_struct.Buffer = PWSTR(unsafe { (*buf_cursor).offset_from(base) as *mut u16 });
 
         debug_assert!(!dst_struct.Buffer.is_null());
 
@@ -104,7 +109,11 @@ pub fn kerb_interactive_unlock_logon_pack(
 }
 
 // As de documentation and samples says, the struct received comes as we pack it
-pub fn kerb_interactive_unlock_logon_unpack_in_place<'a>(
+/// Unpacks a packed `KERB_INTERACTIVE_UNLOCK_LOGON` struct in place, updating string pointers to point to their actual locations within the buffer.
+///
+/// # Safety
+/// The caller must ensure that `base` points to a valid buffer containing a packed `KERB_INTERACTIVE_UNLOCK_LOGON` struct,
+pub unsafe fn kerb_interactive_unlock_logon_unpack_in_place<'a>(
     base: *mut u8,
 ) -> &'a mut KERB_INTERACTIVE_UNLOCK_LOGON {
     let pkiul = base.cast::<KERB_INTERACTIVE_UNLOCK_LOGON>();

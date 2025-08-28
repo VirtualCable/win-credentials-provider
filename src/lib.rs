@@ -51,7 +51,7 @@ pub extern "system" fn DllGetClassObject(
 ) -> HRESULT {
     util::logger::setup_logging("info");
     unsafe {
-        if *rclsid != crate::credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER {
+        if *rclsid != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
 

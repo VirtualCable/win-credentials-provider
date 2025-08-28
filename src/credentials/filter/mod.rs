@@ -1,12 +1,19 @@
 use windows::{
-    Win32::UI::Shell::{
-        CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        ICredentialProviderFilter, ICredentialProviderFilter_Impl,
+    Win32::{
+        Foundation::{E_INVALIDARG, E_NOTIMPL},
+        UI::Shell::{
+            CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
+            CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+            ICredentialProviderFilter, ICredentialProviderFilter_Impl,
+        },
     },
     core::*,
 };
 
-use crate::{debug_dev, util::lsa};
+use crate::{
+    debug_dev,
+    util::{helpers, lsa},
+};
 
 #[implement(ICredentialProviderFilter)]
 pub struct UDSCredentialsFilter {}
@@ -28,12 +35,37 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
     #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn Filter(
         &self,
-        _cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        _dwflags: u32,
-        _rgclsidproviders: *const windows::core::GUID,
-        _rgballow: *mut windows::core::BOOL,
-        _cproviders: u32,
+        cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+        dwflags: u32,
+        rgclsidproviders: *const windows::core::GUID,
+        rgballow: *mut windows::core::BOOL,
+        cproviders: u32,
     ) -> windows::core::Result<()> {
+        let is_rdp = helpers::is_rdp_session();
+
+        debug_dev!("Filter called. is_rdp: {} {}", is_rdp, dwflags);
+        
+        match cpus {
+            CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
+                // In logon or unlock workstation, we only allow our provider if it's not an RDP session
+                for i in 0..cproviders as isize {
+                    unsafe {
+                        let clsid = *rgclsidproviders.offset(i);
+                        let allow =
+                            clsid == crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER && !is_rdp;
+                        *rgballow.offset(i) = allow.into();
+                        debug_dev!("Filter: provider: {:?}, allow: {}", clsid, allow);
+                    }
+                }
+            }
+            CPUS_CREDUI | CPUS_CHANGE_PASSWORD => {
+                return Err(E_NOTIMPL.into());
+            }
+            _ => {
+                return Err(E_INVALIDARG.into());
+            }
+        }
+
         Ok(())
     }
     ///

@@ -3,7 +3,10 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
-use windows::Win32::Foundation::HINSTANCE;
+use windows::{Win32::Foundation::HINSTANCE, core::GUID};
+
+pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
+    GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
 
 // Gobal DLL References counter
 pub static DLL_REF_COUNT: AtomicU32 = AtomicU32::new(0);

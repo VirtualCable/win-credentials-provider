@@ -23,8 +23,6 @@ use zeroize::Zeroize;
 use crate::debug_dev;
 use crate::{credentials::credential::UDSCredential, util::lsa};
 
-pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
-    GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
 
 #[implement(ICredentialProvider)]
 #[derive(Clone)]
@@ -148,7 +146,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        if unsafe { *pcpcs }.clsidCredentialProvider != CLSID_UDS_CREDENTIAL_PROVIDER {
+        if unsafe { *pcpcs }.clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
             return Err(E_INVALIDARG.into());
         }
         debug_dev!("SetSerialization called with our CLSID");
@@ -244,7 +242,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     ) -> windows::core::Result<()> {
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
-        let is_rdp = crate::util::helpers::is_session_rdp();
+        let is_rdp = crate::util::helpers::is_rdp_session();
         let has_valid_creds = self.credential.read().unwrap().is_ready()
             && crate::broker::is_broker_credential(&self.credential.read().unwrap().username());
 

@@ -27,7 +27,7 @@ use windows::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER,
+    globals::CLSID_UDS_CREDENTIAL_PROVIDER,
     debug_dev, globals,
     util::{com, lsa},
 };

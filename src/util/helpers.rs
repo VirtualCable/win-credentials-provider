@@ -99,7 +99,7 @@ pub fn sec_attrs_for_sid(sid: PSID) -> Result<SecurityAttributes> {
     }
 }
 
-pub fn is_session_rdp() -> bool {
+pub fn is_rdp_session() -> bool {
     unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
 }
 

@@ -44,7 +44,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         let is_rdp = helpers::is_rdp_session();
 
         debug_dev!("Filter called. is_rdp: {} {}", is_rdp, dwflags);
-        
+
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
                 // In logon or unlock workstation, we only allow our provider if it's not an RDP session
@@ -80,32 +80,33 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         debug_dev!("UpdateRemoteCredential called. {:?}", pcpcsin);
         #[cfg(debug_assertions)]
         {
-            let mut rgb_serialization = vec![0; unsafe { *pcpcsin }.cbSerialization as usize];
-            // Copy the serialization data
-            rgb_serialization.copy_from_slice(unsafe {
-                std::slice::from_raw_parts(
+            unsafe {
+                let mut rgb_serialization = vec![0; (*pcpcsin).cbSerialization as usize];
+                // Copy the serialization data
+                rgb_serialization.copy_from_slice(std::slice::from_raw_parts(
                     (*pcpcsin).rgbSerialization,
                     (*pcpcsin).cbSerialization as usize,
-                )
-            });
-            // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
-            // so logon points to the same memory as the packed structure
-            let logon = unsafe {
-                lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _)
-            };
-            // Username should be our token, password our shared_secret with our server
-            // and domain is simply ignored :)
-            let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
-            let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
-            let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
+                ));
+                // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
+                // so logon points to the same memory as the packed structure
+                let logon = lsa::kerb_interactive_unlock_logon_unpack_in_place(
+                    rgb_serialization.as_ptr() as _,
+                );
+                // Username should be our token, password our shared_secret with our server
+                // and domain is simply ignored :)
+                let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
+                let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
+                let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
-            debug_dev!(
-                "UpdateRemoteCredential: username: {}, password: {}, domain: {}",
-                username,
-                password,
-                domain
-            );
+                debug_dev!(
+                    "UpdateRemoteCredential: username: {}, password: {}, domain: {}",
+                    username,
+                    password,
+                    domain
+                );
+            }
         }
+
         Ok(())
     }
 }

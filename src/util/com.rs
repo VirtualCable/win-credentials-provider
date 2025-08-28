@@ -2,8 +2,7 @@ use std::{mem, ptr};
 use widestring::U16CString;
 
 use windows::{
-    Win32::System::Com::{CoCreateInstance, CoTaskMemAlloc, IGlobalInterfaceTable},
-    core::{GUID, IUnknown, Interface, PCWSTR, PWSTR},
+    core::{IUnknown, Interface, GUID, PCWSTR, PWSTR}, Win32::System::Com::{CoCreateInstance, CoTaskMemAlloc, CoTaskMemFree, IGlobalInterfaceTable}
 };
 
 pub const CLSID_STD_GLOBAL_INTERFACE_TABLE: GUID =
@@ -18,15 +17,28 @@ pub enum AllocPwstrError {
 #[allow(dead_code)]
 pub fn alloc_pwstr(s: &str) -> Result<PWSTR, AllocPwstrError> {
     let wide = U16CString::from_str(s).map_err(|_| AllocPwstrError::InvalidString)?;
-    let len = wide.len();
+    let len = wide.len() + 1;
 
     unsafe {
+        // Allow for null terminator
         let mem = CoTaskMemAlloc(len * mem::size_of::<u16>()) as *mut u16;
         if mem.is_null() {
             return Err(AllocPwstrError::AllocationFailed);
         }
-        ptr::copy_nonoverlapping(wide.as_ptr(), mem, len);
+        ptr::copy_nonoverlapping(
+            wide.as_ptr(),
+            mem,
+            len,
+        );
         Ok(PWSTR(mem))
+    }
+}
+
+pub fn free_pcwstr(pcwstr: PCWSTR) {
+    unsafe {
+        if !pcwstr.is_null() {
+            CoTaskMemFree(Some(pcwstr.0 as _));
+        }
     }
 }
 
@@ -36,9 +48,9 @@ pub fn pcwstr_to_string(pcwstr: PCWSTR) -> String {
     }
 
     unsafe {
-        // Interpreta el puntero como una U16CStr terminada en 0
+        // Interpret the pointer as a U16CStr terminated in 0
         let u16_cstr = widestring::U16CStr::from_ptr_str(pcwstr.0);
-        // Convierte directamente a String (UTF‑8), con reemplazo si hay caracteres inválidos
+        // Convert directly to String (UTF‑8), with replacement if there are invalid characters
         u16_cstr.to_string_lossy()
     }
 }

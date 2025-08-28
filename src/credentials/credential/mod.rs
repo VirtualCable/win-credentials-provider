@@ -27,8 +27,8 @@ use windows::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    globals::CLSID_UDS_CREDENTIAL_PROVIDER,
     debug_dev, globals,
+    globals::CLSID_UDS_CREDENTIAL_PROVIDER,
     util::{com, lsa},
 };
 
@@ -134,30 +134,20 @@ impl UDSCredential {
         }
         None
     }
-}
 
-impl Default for UDSCredential {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
-    // By this method, LogonUI gives us a callback so we can notify it of changes
-    // If we need to update the UI, we can call the appropriate methods on the events object
-    fn Advise(
+    // Private methods
+    fn register_event_manager(
         &self,
-        pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
+        manager: ICredentialProviderCredentialEvents,
     ) -> windows::core::Result<()> {
-        debug_dev!("Advising credential provider events");
-        let cookie = com::register_in_git(pcpce.unwrap().clone())?;
+        debug_dev!("Registering credential provider events");
+        let cookie = com::register_in_git(manager).unwrap();
         *self.cookie.write().unwrap() = Some(cookie);
         Ok(())
     }
 
-    // Release the callback
-    fn UnAdvise(&self) -> windows::core::Result<()> {
-        debug_dev!("Unadvising credential provider events");
+    fn unregister_event_manager(&self) -> windows::core::Result<()> {
+        debug_dev!("Unregistering credential provider events");
         if let Some(cookie) = *self.cookie.write().unwrap() {
             com::unregister_from_git(cookie)?;
             *self.cookie.write().unwrap() = None;
@@ -165,18 +155,17 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         Ok(())
     }
 
-    // Invoked when our tile is selected.
-    // We do not heed any special here, Just inform to not autologon
-    fn SetSelected(&self) -> windows::core::Result<windows::core::BOOL> {
-        // If we have an username, copy it to values
-        let username: String = {
+    fn update_value_from_username(&self) {
+        debug_dev!("Updating value from username");
+
+        let username: Option<String> = {
             let credential = self.credential.read().unwrap();
             if credential.username.is_empty() {
-                "".to_string()
+                None
             } else {
                 // If we have domain and has a point, set username to username@domain
                 // else, if we have domain, set domain\username
-                if !credential.domain.is_empty() {
+                Some(if !credential.domain.is_empty() {
                     if credential.domain.contains('.') {
                         format!("{}@{}", credential.username, credential.domain)
                     } else {
@@ -184,65 +173,62 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
                     }
                 } else {
                     credential.username.clone()
-                }
+                })
             }
         };
-        if !username.is_empty() {
+        if let Some(username) = username {
             self.values.write().unwrap()[UdsFieldId::Username as usize] = username;
         }
-        Ok(false.into())
     }
 
-    // Our tile is deselected, clear the password value
-    // To do not keep it in memory
-    fn SetDeselected(&self) -> windows::core::Result<()> {
-        // If values[<index>] is the password field, clear it
-        let mut values = self.values.write().unwrap();
+    fn clear_password_value(&self) -> windows::core::Result<()> {
+        debug_dev!("Clearing password field");
+
+        let mut values: std::sync::RwLockWriteGuard<'_, Vec<String>> = self.values.write().unwrap();
         if !values[UdsFieldId::Password as usize].is_empty() {
             values[UdsFieldId::Password as usize].zeroize(); // Clear the password field
         }
         let cred_prov_events = self.get_icredential_provider_credential_event();
         if let Some(events) = cred_prov_events {
+            debug_dev!("Notifying LogonUI to clear the password field");
             let icred: ICredentialProviderCredential = (*self).clone().into();
             unsafe {
                 events.SetFieldString(
                     &icred,
                     UdsFieldId::Password as u32,
-                    windows::core::PCWSTR::null(), // Empty string
+                    PCWSTR::null(), // Empty string
                 )
             }?;
         }
         Ok(())
     }
 
-    /// Retrieves the state of a field.
-    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn GetFieldState(
+    unsafe fn get_field_state(
         &self,
-        dwfieldid: u32,
+        field_id: u32,
         pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
         pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
     ) -> windows::core::Result<()> {
-        if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
+        if field_id as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
+        let field = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
         unsafe {
-            *pcpfs = CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize].state;
-            *pcpfis = CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize].interactive_state;
+            *pcpfs = field.state;
+            *pcpfis = field.interactive_state;
         }
         Ok(())
     }
 
-    /// Retrieves the string value of a field.
-    fn GetStringValue(&self, dwfieldid: u32) -> windows::core::Result<PWSTR> {
-        if dwfieldid as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
+    fn get_string_value(&self, field_id: u32) -> windows::core::Result<PWSTR> {
+        if field_id as usize >= CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
             return Err(E_INVALIDARG.into());
         }
         let values = self.values.read().unwrap();
-        let value = values[dwfieldid as usize].as_str();
+        let value = values[field_id as usize].as_str();
         debug!(
             "GetStringValue called for field ID: {}; {}",
-            dwfieldid, value
+            field_id, value
         );
 
         match crate::util::com::alloc_pwstr(value) {
@@ -251,9 +237,30 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         }
     }
 
-    // Get the bitmap shown on the user tile
-    fn GetBitmapValue(&self, dwfieldid: u32) -> windows::core::Result<HBITMAP> {
-        if dwfieldid == UdsFieldId::TileImage as u32 {
+    fn set_string_value(&self, field_id: u32, psz: &PCWSTR) -> windows::core::Result<()> {
+        debug_dev!(
+            "SetStringValue called for field ID: {}; {:?}",
+            field_id,
+            psz
+        );
+        if (field_id as usize) < CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
+            let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
+            debug_dev!("Field descriptor: {:?}", descriptor);
+            if descriptor.is_text_field() {
+                let new_value = crate::util::com::pcwstr_to_string(*psz);
+                debug_dev!("New value: {}", new_value);
+                self.values.write().unwrap()[field_id as usize] = new_value;
+                return Ok(());
+            } else {
+                debug_dev!("Field is not a text field");
+            }
+        }
+
+        Err(E_INVALIDARG.into())
+    }
+
+    fn get_bitmap_value(&self, field_id: u32) -> windows::core::Result<HBITMAP> {
+        if field_id == UdsFieldId::TileImage as u32 {
             unsafe {
                 LoadImageW(
                     Some(globals::get_instance()),
@@ -270,10 +277,126 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         }
     }
 
+    fn serialize(
+        &self,
+        pcpgsr: *mut CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
+        pcpcs: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+    ) -> windows::core::Result<()> {
+        debug_dev!(
+            "Serialization called: location of pcpcs: {:?}",
+            pcpcs as *const _
+        );
+
+        // Store LSA strings and ensure they live long enough
+        let lsa_username = lsa::LsaUnicodeString::new(&self.credential.read().unwrap().username);
+        let lsa_password = lsa::LsaUnicodeString::new(&String::from_utf8_lossy(
+            &self.credential.read().unwrap().password,
+        ));
+        let lsa_domain = lsa::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
+
+        let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
+            Logon: KERB_INTERACTIVE_LOGON {
+                MessageType: if self.cpus == CPUS_UNLOCK_WORKSTATION {
+                    KerbWorkstationUnlockLogon
+                } else {
+                    KerbInteractiveLogon
+                },
+                LogonDomainName: *lsa_domain.as_lsa(),
+                UserName: *lsa_username.as_lsa(),
+                Password: *lsa_password.as_lsa(),
+            },
+            LogonId: Default::default(),
+        };
+        let (pkiul_out, cb_total) =
+            unsafe { lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)? };
+        debug_dev!(
+            "Packed KERB_INTERACTIVE_UNLOCK_LOGON: {:?}: {}",
+            pkiul_out,
+            cb_total
+        );
+
+        unsafe {
+            (*pcpcs).rgbSerialization = pkiul_out;
+            (*pcpcs).cbSerialization = cb_total;
+            (*pcpcs).ulAuthenticationPackage = match lsa::retrieve_negotiate_auth_package() {
+                Ok(package) => package,
+                Err(err) => {
+                    error!("Failed to retrieve negotiate auth package: {}", err);
+                    return Err(err);
+                }
+            };
+            (*pcpcs).clsidCredentialProvider = CLSID_UDS_CREDENTIAL_PROVIDER;
+            *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED
+        };
+
+        Ok(())
+    }
+}
+
+impl Default for UDSCredential {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
+    // By this method, LogonUI gives us a callback so we can notify it of changes
+    // If we need to update the UI, we can call the appropriate methods on the events object
+    fn Advise(
+        &self,
+        pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
+    ) -> windows::core::Result<()> {
+        self.register_event_manager(pcpce.unwrap().clone())
+    }
+
+    // Release the callback
+    fn UnAdvise(&self) -> windows::core::Result<()> {
+        self.unregister_event_manager()
+    }
+
+    // Invoked when our tile is selected.
+    // We do not heed any special here, Just inform to not autologon
+    fn SetSelected(&self) -> windows::core::Result<BOOL> {
+        // If we have an username, copy it to values
+        self.update_value_from_username();
+
+        // true --> Focus on our main credential field
+        // false --> do not focus
+        Ok(false.into())
+    }
+
+    // Our tile is deselected, clear the password value
+    // To do not keep it in memory
+    fn SetDeselected(&self) -> windows::core::Result<()> {
+        // If values[<index>] is the password field, clear it
+        self.clear_password_value()
+    }
+
+    /// Retrieves the state of a field.
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
+    fn GetFieldState(
+        &self,
+        dwfieldid: u32,
+        pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
+        pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
+    ) -> windows::core::Result<()> {
+        unsafe { self.get_field_state(dwfieldid, pcpfs, pcpfis) }
+    }
+
+    /// Retrieves the string value of a field.
+    fn GetStringValue(&self, dwfieldid: u32) -> windows::core::Result<PWSTR> {
+        self.get_string_value(dwfieldid)
+    }
+
+    // Get the bitmap shown on the user tile
+    fn GetBitmapValue(&self, dwfieldid: u32) -> windows::core::Result<HBITMAP> {
+        self.get_bitmap_value(dwfieldid)
+    }
+
     fn GetCheckboxValue(
         &self,
         _dwfieldid: u32,
-        _pbchecked: *mut windows::core::BOOL,
+        _pbchecked: *mut BOOL,
         _ppszlabel: *mut PWSTR,
     ) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
@@ -300,37 +423,11 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         Err(E_NOTIMPL.into())
     }
 
-    fn SetStringValue(
-        &self,
-        dwfieldid: u32,
-        psz: &windows::core::PCWSTR,
-    ) -> windows::core::Result<()> {
-        debug_dev!(
-            "SetStringValue called for field ID: {}; {:?}",
-            dwfieldid,
-            psz
-        );
-        if (dwfieldid as usize) < CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS.len() {
-            let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwfieldid as usize];
-            debug_dev!("Field descriptor: {:?}", descriptor);
-            if descriptor.is_text_field() {
-                let new_value = crate::util::com::pcwstr_to_string(*psz);
-                debug_dev!("New value: {}", new_value);
-                self.values.write().unwrap()[dwfieldid as usize] = new_value;
-                return Ok(());
-            } else {
-                debug_dev!("Field is not a text field");
-            }
-        }
-
-        Err(E_INVALIDARG.into())
+    fn SetStringValue(&self, dwfieldid: u32, psz: &PCWSTR) -> windows::core::Result<()> {
+        self.set_string_value(dwfieldid, psz)
     }
 
-    fn SetCheckboxValue(
-        &self,
-        _dwfieldid: u32,
-        _bchecked: windows::core::BOOL,
-    ) -> windows::core::Result<()> {
+    fn SetCheckboxValue(&self, _dwfieldid: u32, _bchecked: BOOL) -> windows::core::Result<()> {
         Err(E_NOTIMPL.into())
     }
 
@@ -356,52 +453,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _ppszoptionalstatustext: *mut PWSTR,
         _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
     ) -> windows::core::Result<()> {
-        debug_dev!("GetSerialization called");
-
-        // Store LSA strings and ensure they live long enough
-        let lsa_username =
-            lsa::LsaUnicodeString::new(&self.credential.read().unwrap().username);
-        let lsa_password = lsa::LsaUnicodeString::new(&String::from_utf8_lossy(
-            &self.credential.read().unwrap().password,
-        ));
-        let lsa_domain =
-            lsa::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
-
-        let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
-            Logon: KERB_INTERACTIVE_LOGON {
-                MessageType: if self.cpus == CPUS_UNLOCK_WORKSTATION {
-                    KerbWorkstationUnlockLogon
-                } else {
-                    KerbInteractiveLogon
-                },
-                LogonDomainName: *lsa_domain.as_lsa(),
-                UserName: *lsa_username.as_lsa(),
-                Password: *lsa_password.as_lsa(),
-            },
-            LogonId: Default::default(),
-        };
-        let (pkiul_out, cb_total) =
-            unsafe { lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)? };
-        debug_dev!(
-            "Packed KERB_INTERACTIVE_UNLOCK_LOGON: {:?}: {}",
-            pkiul_out,
-            cb_total
-        );
-
-        unsafe { *pcpcs }.rgbSerialization = pkiul_out;
-        unsafe { *pcpcs }.cbSerialization = cb_total;
-
-        unsafe { *pcpcs }.ulAuthenticationPackage = match lsa::retrieve_negotiate_auth_package() {
-            Ok(package) => package,
-            Err(err) => {
-                error!("Failed to retrieve negotiate auth package: {}", err);
-                return Err(err);
-            }
-        };
-        unsafe { *pcpcs }.clsidCredentialProvider = CLSID_UDS_CREDENTIAL_PROVIDER;
-        unsafe { *pcpgsr = CPGSR_RETURN_CREDENTIAL_FINISHED };
-
-        Ok(())
+        self.serialize(pcpgsr, pcpcs)
     }
 
     fn ReportResult(
@@ -419,3 +471,6 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

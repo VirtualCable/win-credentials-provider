@@ -9,8 +9,8 @@ use windows::{
 use crate::globals::{dll_add_ref, dll_release};
 
 // Implementaciones concretas
-use crate::credentials::provider::UDSCredentialsProvider;
 use crate::credentials::filter::UDSCredentialsFilter;
+use crate::credentials::provider::UDSCredentialsProvider;
 
 #[implement(IClassFactory)]
 pub struct ClassFactory;
@@ -37,15 +37,15 @@ impl IClassFactory_Impl for ClassFactory_Impl {
         riid: *const GUID,
         ppvobject: *mut *mut core::ffi::c_void,
     ) -> Result<()> {
+        // Aggregation not supported
+        if !punkouter.is_null() {
+            return Err(CLASS_E_NOAGGREGATION.into());
+        }
+        // Pointer validation
+        if ppvobject.is_null() || riid.is_null() {
+            return Err(E_INVALIDARG.into());
+        }
         unsafe {
-            // Aggregation not supported
-            if !punkouter.is_null() {
-                return Err(CLASS_E_NOAGGREGATION.into());
-            }
-            // Pointer validation
-            if ppvobject.is_null() || riid.is_null() {
-                return Err(E_INVALIDARG.into());
-            }
             *ppvobject = core::ptr::null_mut();
 
             if *riid == ICredentialProvider::IID {

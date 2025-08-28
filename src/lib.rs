@@ -69,3 +69,6 @@ pub mod globals;
 pub mod messages;
 pub mod broker;
 pub mod util;
+
+#[cfg(test)]
+mod test_utils;

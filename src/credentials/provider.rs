@@ -23,7 +23,6 @@ use zeroize::Zeroize;
 use crate::debug_dev;
 use crate::{credentials::credential::UDSCredential, util::lsa};
 
-
 #[implement(ICredentialProvider)]
 #[derive(Clone)]
 pub struct UDSCredentialsProvider {
@@ -146,52 +145,54 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        if unsafe { *pcpcs }.clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
-            return Err(E_INVALIDARG.into());
-        }
-        debug_dev!("SetSerialization called with our CLSID");
-        let mut rgb_serialization = vec![0; unsafe { *pcpcs }.cbSerialization as usize];
-        // Copy the serialization data
-        rgb_serialization.copy_from_slice(unsafe {
-            std::slice::from_raw_parts((*pcpcs).rgbSerialization, (*pcpcs).cbSerialization as usize)
-        });
-        // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
-        // so logon points to the same memory as the packed structure
-        let logon = unsafe {
-            lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _)
-        };
-
-        // Username should be our token, password our shared_secret with our server
-        // and domain is simply ignored :)
-        let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
-        let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
-        let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
-
-        if !crate::broker::is_broker_credential(&username) {
-            return Err(E_INVALIDARG.into());
-        }
-
-        match crate::broker::get_credentials_from_broker(&username, &password, &domain) {
-            Ok((username, mut password, domain)) => {
-                self.credential
-                    .write()
-                    .unwrap()
-                    .set_credentials(&username, &password, &domain);
-
-                debug_dev!(
-                    "SetSerialization extracted credentials: {}\\{}",
-                    domain,
-                    username
-                );
-                // Clean up retrieved password
-                password.zeroize();
+        unsafe {
+            if (*pcpcs).clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
+                return Err(E_INVALIDARG.into());
             }
-            Err(e) => {
-                error!("Failed to get credentials from broker: {:?}", e);
-            }
-        };
+            debug_dev!("SetSerialization called with our CLSID");
+            let mut rgb_serialization = vec![0; (*pcpcs).cbSerialization as usize];
+            // Copy the serialization data
+            rgb_serialization.copy_from_slice(std::slice::from_raw_parts(
+                (*pcpcs).rgbSerialization,
+                (*pcpcs).cbSerialization as usize,
+            ));
+            // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
+            // so logon points to the same memory as the packed structure
+            let logon =
+                lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _);
 
-        rgb_serialization.zeroize(); // Clean up OUR packed data also
+            // Username should be our token, password our shared_secret with our server
+            // and domain is simply ignored :)
+            let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
+            let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
+            let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
+
+            if !crate::broker::is_broker_credential(&username) {
+                return Err(E_INVALIDARG.into());
+            }
+
+            match crate::broker::get_credentials_from_broker(&username, &password, &domain) {
+                Ok((username, mut password, domain)) => {
+                    self.credential
+                        .write()
+                        .unwrap()
+                        .set_credentials(&username, &password, &domain);
+
+                    debug_dev!(
+                        "SetSerialization extracted credentials: {}\\{}",
+                        domain,
+                        username
+                    );
+                    // Clean up retrieved password
+                    password.zeroize();
+                }
+                Err(e) => {
+                    error!("Failed to get credentials from broker: {:?}", e);
+                }
+            };
+
+            rgb_serialization.zeroize(); // Clean up OUR packed data also
+        }
 
         Ok(())
     }

@@ -259,14 +259,9 @@ impl ChannelServer {
                 return Err(anyhow::anyhow!("Failed to write complete message length"));
             }
 
-            WriteFile(
-                self.pipe_handle.get(),
-                Some(&buf),
-                Some(&mut written),
-                None,
-            )
-            .ok()
-            .context("Failed to write message body")?;
+            WriteFile(self.pipe_handle.get(), Some(&buf), Some(&mut written), None)
+                .ok()
+                .context("Failed to write message body")?;
             // Ensure the entire message is written
             if written != buf.len() as u32 {
                 return Err(anyhow::anyhow!("Failed to write complete message body"));
@@ -294,7 +289,9 @@ impl ChannelServer {
 
     fn disconnect_pipe(&self) {
         // Disconnect the client, but do not destroy the Pipe itself
-        let _ = unsafe { DisconnectNamedPipe(self.pipe_handle.get()) };
+        unsafe {
+            let _ = DisconnectNamedPipe(self.pipe_handle.get());
+        }
         debug_dev!("Disconnected named pipe");
     }
 

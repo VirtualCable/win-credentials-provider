@@ -37,8 +37,10 @@ impl LsaUnicodeString {
         // Look for length of PWSTR before anything, to ensure we can use it
         {
             let mut len = 0;
-            while unsafe { *pwstr.0.add(len) } != 0 && len < u16::MAX as usize {
-                len += 1;
+            unsafe {
+                while *pwstr.0.add(len) != 0 && len < u16::MAX as usize {
+                    len += 1;
+                }
             }
             len
         };
@@ -82,8 +84,10 @@ impl LsaString {
 
     pub fn from_pcstr(pcstr: PCSTR) -> Self {
         let mut len = 0;
-        while unsafe { *pcstr.0.add(len) } != 0 && len < u16::MAX as usize {
-            len += 1;
+        unsafe {
+            while *pcstr.0.add(len) != 0 && len < u16::MAX as usize {
+                len += 1;
+            }
         }
         let slice = unsafe { std::slice::from_raw_parts(pcstr.0, len) };
         let keepalive = String::from_utf8_lossy(slice).to_string();
@@ -249,8 +253,8 @@ pub unsafe fn kerb_interactive_unlock_logon_unpack_in_place<'a>(
             (*pkiul).Logon.Password.Buffer =
                 PWSTR(base.add((*pkiul).Logon.Password.Buffer.0 as usize).cast());
         }
+        &mut *pkiul
     }
-    unsafe { &mut *pkiul }
 }
 
 pub fn retrieve_negotiate_auth_package() -> windows::core::Result<u32> {

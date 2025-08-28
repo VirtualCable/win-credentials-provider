@@ -28,3 +28,14 @@ fn test_get_bitmap_correct_field() -> windows::core::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_get_bitmap_incorrect_field() -> windows::core::Result<()> {
+    let factory = utils::com::ClassFactoryTest::new()?;
+    let credential = factory.create_credential()?;
+
+    let result = unsafe { credential.GetBitmapValue(9999) }; // Invalid field ID
+
+    assert!(result.is_err());
+    Ok(())
+}

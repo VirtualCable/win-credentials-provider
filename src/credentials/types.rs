@@ -19,7 +19,9 @@ pub struct CredentialFieldDescriptor {
 }
 
 impl CredentialFieldDescriptor {
-    pub fn into_com_alloc(self) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
+    pub fn into_com_alloc(
+        &self,
+    ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
         unsafe {
             let ptr = CoTaskMemAlloc(mem::size_of::<CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR>())
                 as *mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR;
@@ -67,4 +69,33 @@ pub enum UdsFieldId {
     Password,
     SubmitButton,
     NumFields, // Note: if new fields are added, keep NumFields last.  This is used as a count of the number of fields
+}
+
+#[cfg(test)]
+mod tests {
+    use windows::Win32::UI::Shell::{CPFIS_NONE, CPFS_DISPLAY_IN_SELECTED_TILE, CPFT_EDIT_TEXT};
+    use crate::util::traits::To;
+
+    use super::*;
+
+    #[test]
+    fn test_credential_field_descriptor() {
+        let field = CredentialFieldDescriptor {
+            field_id: 1,
+            field_type: CPFT_EDIT_TEXT,
+            label: "Username",
+            guid: GUID::from_u128(32),
+            state: CPFS_DISPLAY_IN_SELECTED_TILE,
+            interactive_state: CPFIS_NONE,
+        };
+
+        let com_ptr = field.into_com_alloc();
+        assert!(com_ptr.is_ok());
+        let com_ptr = com_ptr.unwrap();
+        assert!(unsafe { *com_ptr }.dwFieldID == 1);
+        assert!(unsafe { *com_ptr }.cpft == CPFT_EDIT_TEXT);
+        let string: String = unsafe { *com_ptr }.pszLabel.to();
+        assert!(string == "Username");
+        assert!(unsafe { *com_ptr }.guidFieldType == GUID::from_u128(32));
+    }
 }

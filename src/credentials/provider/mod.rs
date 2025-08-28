@@ -5,21 +5,23 @@ use std::sync::{
 
 use windows::{
     Win32::{
-        Foundation::E_INVALIDARG,
+        Foundation::{E_INVALIDARG, E_NOTIMPL},
         UI::Shell::{
-            CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_UNLOCK_WORKSTATION,
+            CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_PLAP, CPUS_UNLOCK_WORKSTATION,
             CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
-            CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProvider, ICredentialProvider_Impl,
-            ICredentialProviderCredential, ICredentialProviderEvents,
+            CREDENTIAL_PROVIDER_NO_DEFAULT, CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+            ICredentialProvider, ICredentialProvider_Impl, ICredentialProviderCredential,
+            ICredentialProviderEvents,
         },
     },
     core::*,
 };
 
 use log::error;
+use zeroize::Zeroize;
 
-use crate::credentials::credential::UDSCredential;
 use crate::debug_dev;
+use crate::{credentials::credential::UDSCredential, util::lsa};
 
 pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
     GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
@@ -133,17 +135,69 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
                 self.credential.write().unwrap().set_usage_scenario(cpus);
                 Ok(())
             }
-            CPUS_CREDUI | CPUS_CHANGE_PASSWORD => Ok(()),
+            CPUS_CREDUI | CPUS_CHANGE_PASSWORD | CPUS_PLAP => Err(E_NOTIMPL.into()),
             _ => Err(E_INVALIDARG.into()),
         }
     }
 
+    // This will receive the credentials provided by the user
+    // In case of RDP (our initial implementation will be for RDP)
+    // The username, password and domain will be those present on the logon request by the user
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn SetSerialization(
         &self,
-        _pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+        pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
+        if unsafe { *pcpcs }.clsidCredentialProvider != CLSID_UDS_CREDENTIAL_PROVIDER {
+            return Err(E_INVALIDARG.into());
+        }
+        debug_dev!("SetSerialization called with our CLSID");
+        let mut rgb_serialization = vec![0; unsafe { *pcpcs }.cbSerialization as usize];
+        // Copy the serialization data
+        rgb_serialization.copy_from_slice(unsafe {
+            std::slice::from_raw_parts((*pcpcs).rgbSerialization, (*pcpcs).cbSerialization as usize)
+        });
+        // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
+        // so logon points to the same memory as the packed structure
+        let logon = unsafe {
+            lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _)
+        };
+
+        // Username should be our token, password our shared_secret with our server
+        // and domain is simply ignored :)
+        let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
+        let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
+        let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
+
+        if !crate::broker::is_broker_credential(&username) {
+            return Err(E_INVALIDARG.into());
+        }
+
+        match crate::broker::get_credentials_from_broker(&username, &password, &domain) {
+            Ok((username, mut password, domain)) => {
+                self.credential
+                    .write()
+                    .unwrap()
+                    .set_credentials(&username, &password, &domain);
+
+                debug_dev!(
+                    "SetSerialization extracted credentials: {}\\{}",
+                    domain,
+                    username
+                );
+                // Clean up retrieved password
+                password.zeroize();
+            }
+            Err(e) => {
+                error!("Failed to get credentials from broker: {:?}", e);
+            }
+        };
+
+        rgb_serialization.zeroize(); // Clean up OUR packed data also
+
         Ok(())
     }
+
     fn Advise(
         &self,
         pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
@@ -152,9 +206,11 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         // Store for using later
         let cookie = crate::util::com::register_in_git(pcpe.clone().unwrap())?;
         *self.cookie.write().unwrap() = Some(cookie);
+        // Context used with ICredentialProviderEvents
         *self.up_advise_context.write().unwrap() = Some(upadvisecontext);
         Ok(())
     }
+
     fn UnAdvise(&self) -> windows::core::Result<()> {
         if let Some(cookie) = *self.cookie.write().unwrap() {
             crate::util::com::unregister_from_git(cookie)?;
@@ -163,23 +219,58 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         }
         Ok(())
     }
+
     fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
-        Ok(0)
+        Ok(crate::credentials::types::UdsFieldId::NumFields as u32)
     }
+
     fn GetFieldDescriptorAt(
         &self,
-        _dwindex: u32,
+        dwindex: u32,
     ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
-        Ok(std::ptr::null_mut())
+        if dwindex >= crate::credentials::types::UdsFieldId::NumFields as u32 {
+            return Err(windows::core::Error::from_hresult(E_INVALIDARG));
+        }
+        crate::credentials::fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwindex as usize]
+            .into_com_alloc()
     }
+
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn GetCredentialCount(
         &self,
-        _pdwcount: *mut u32,
-        _pdwdefault: *mut u32,
-        _pbautologonwithdefault: *mut windows::core::BOOL,
+        pdwcount: *mut u32,
+        pdwdefault: *mut u32,
+        pbautologonwithdefault: *mut windows::core::BOOL,
     ) -> windows::core::Result<()> {
+        // If we have redirected credentials, SetSerialization will be invoked prior us
+        // If not, we allow interactive logon
+        let is_rdp = crate::util::helpers::is_session_rdp();
+        let has_valid_creds = self.credential.read().unwrap().is_ready()
+            && crate::broker::is_broker_credential(&self.credential.read().unwrap().username());
+
+        debug_dev!(
+            "GetCredentialCount called. is_rdp: {} has_creds: {}",
+            is_rdp,
+            has_valid_creds
+        );
+
+        // If 0, our provider will not be shown
+        unsafe { *pdwcount = 1 };
+
+        if is_rdp && has_valid_creds {
+            unsafe {
+                *pdwdefault = 0;
+                *pbautologonwithdefault = true.into();
+            }
+        } else {
+            unsafe {
+                *pdwdefault = CREDENTIAL_PROVIDER_NO_DEFAULT;
+                *pbautologonwithdefault = false.into();
+            }
+        }
         Ok(())
     }
+
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
         if dwindex == 0 {
             Ok(self.credential.read().unwrap().clone().into())

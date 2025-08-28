@@ -67,4 +67,5 @@ pub mod classfactory;
 pub mod credentials;
 pub mod globals;
 pub mod messages;
+pub mod broker;
 pub mod util;

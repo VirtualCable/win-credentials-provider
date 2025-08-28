@@ -1,9 +1,6 @@
 use super::*;
 
-use crate::util::{
-    com::{LsaUnicodeString, lsa_unicode_string_to_string},
-    logger::setup_logging,
-};
+use crate::util::logger::setup_logging;
 
 use windows::Win32::Security::Authentication::Identity::{
     KERB_INTERACTIVE_LOGON, KerbInteractiveLogon,
@@ -125,4 +122,13 @@ fn test_retrieve_negotiate_auth_package() {
     setup_logging("debug");
     let package = retrieve_negotiate_auth_package().unwrap();
     debug_dev!("Negotiate Auth Package: {}", package);
+}
+
+#[test]
+fn test_lsa_unicode_string_owned() {
+    let s = "Test String";
+    let lsa_owned = LsaUnicodeString::new(s);
+    let lsa_ref = lsa_owned.as_lsa();
+    let converted = lsa_unicode_string_to_string(lsa_ref);
+    assert_eq!(s, converted);
 }

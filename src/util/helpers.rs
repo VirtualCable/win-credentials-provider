@@ -10,6 +10,7 @@ use windows::Win32::{
         Threading::{GetCurrentProcess, OpenProcessToken},
         WindowsProgramming::GetComputerNameW,
     },
+    UI::WindowsAndMessaging::{GetSystemMetrics, SM_REMOTESESSION},
 };
 use windows::core::*;
 
@@ -71,9 +72,7 @@ impl SecurityAttributes {
 }
 
 // Helper to get security attrs for acces only by a sid
-pub fn sec_attrs_for_sid(
-    sid: PSID,
-) -> Result<SecurityAttributes> {
+pub fn sec_attrs_for_sid(sid: PSID) -> Result<SecurityAttributes> {
     unsafe {
         let mut sec_desc = SECURITY_DESCRIPTOR::default();
         let p_sec_dec = PSECURITY_DESCRIPTOR(&mut sec_desc as *mut _ as _);
@@ -98,6 +97,10 @@ pub fn sec_attrs_for_sid(
             _acl_buf: acl_buf,
         })
     }
+}
+
+pub fn is_session_rdp() -> bool {
+    unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
 }
 
 #[cfg(test)]

@@ -3,4 +3,3 @@ pub mod credential;
 pub mod filter;
 pub mod types;
 pub mod fields;
-pub mod lsa;

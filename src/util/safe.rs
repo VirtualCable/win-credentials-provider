@@ -20,11 +20,12 @@ pub struct SafeHandle {
 #[allow(dead_code)]
 impl SafeHandle {
     /// Creates a SafeHandle that owns the handle (will close it on Drop)
+    /// If the handle is invalid, it will not be "owned" ofc..
     pub fn new(handle: HANDLE) -> Self {
         Self {
             inner: Arc::new(RwLock::new(HandleInner {
                 handle,
-                owned: true,
+                owned: !handle.is_invalid()
             })),
         }
     }

@@ -26,9 +26,13 @@ use windows::{
 };
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER, debug_dev, globals, util::com};
+use crate::{
+    credentials::provider::CLSID_UDS_CREDENTIAL_PROVIDER,
+    debug_dev, globals,
+    util::{com, lsa},
+};
 
-use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, lsa, types::UdsFieldId};
+use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
 
 #[derive(Debug, Clone)]
 struct Creds {
@@ -104,6 +108,18 @@ impl UDSCredential {
                 _ => String::new(),
             })
             .collect();
+    }
+
+    /// Returns true if the credential is ready to be used
+    pub fn is_ready(&self) -> bool {
+        let credential = self.credential.read().unwrap();
+        // Domain is optional
+        !credential.username.is_empty() && !credential.password.is_empty()
+    }
+
+    pub fn username(&self) -> String {
+        let credential = self.credential.read().unwrap();
+        credential.username.clone()
     }
 
     pub fn set_usage_scenario(&mut self, cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO) {
@@ -344,12 +360,12 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
         // Store LSA strings and ensure they live long enough
         let lsa_username =
-            crate::util::com::LsaUnicodeString::new(&self.credential.read().unwrap().username);
-        let lsa_password = crate::util::com::LsaUnicodeString::new(&String::from_utf8_lossy(
+            lsa::LsaUnicodeString::new(&self.credential.read().unwrap().username);
+        let lsa_password = lsa::LsaUnicodeString::new(&String::from_utf8_lossy(
             &self.credential.read().unwrap().password,
         ));
         let lsa_domain =
-            crate::util::com::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
+            lsa::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
 
         let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
             Logon: KERB_INTERACTIVE_LOGON {
@@ -364,7 +380,8 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
             },
             LogonId: Default::default(),
         };
-        let (pkiul_out, cb_total) = unsafe { lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)? };
+        let (pkiul_out, cb_total) =
+            unsafe { lsa::kerb_interactive_unlock_logon_pack(&interactive_logon)? };
         debug_dev!(
             "Packed KERB_INTERACTIVE_UNLOCK_LOGON: {:?}: {}",
             pkiul_out,

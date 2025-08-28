@@ -1,10 +1,10 @@
+use widestring::U16CString;
 use windows::{
     Win32::{
         Foundation::{E_OUTOFMEMORY, HANDLE},
         Security::Authentication::Identity::{
-            KERB_INTERACTIVE_UNLOCK_LOGON, LSA_UNICODE_STRING, LsaConnectUntrusted,
-            LsaDeregisterLogonProcess, LsaLookupAuthenticationPackage,
-            NEGOSSP_NAME_A,
+            KERB_INTERACTIVE_UNLOCK_LOGON, LSA_STRING, LSA_UNICODE_STRING, LsaConnectUntrusted,
+            LsaDeregisterLogonProcess, LsaLookupAuthenticationPackage, NEGOSSP_NAME_A,
         },
         System::Com::CoTaskMemAlloc,
     },
@@ -13,11 +13,119 @@ use windows::{
 
 use crate::debug_dev;
 
+pub struct LsaUnicodeString {
+    _keepalive: U16CString,  // Dueño de la cadena UTF‑16 + terminador
+    lsa: LSA_UNICODE_STRING, // Estructura con puntero a `wide`
+}
+
+impl LsaUnicodeString {
+    pub fn new(s: &str) -> Self {
+        let wide = U16CString::from_str(s).expect("UTF‑16 inválido");
+        let len_bytes = (wide.len() * 2) as u16; // len() does not count the null terminator
+        let lsa = LSA_UNICODE_STRING {
+            Length: len_bytes,
+            MaximumLength: len_bytes,
+            Buffer: PWSTR(wide.as_ptr() as *mut _),
+        };
+        Self {
+            _keepalive: wide,
+            lsa,
+        }
+    }
+
+    pub fn from_pcwstr(pwstr: PCWSTR) -> Self {
+        // Look for length of PWSTR before anything, to ensure we can use it
+        {
+            let mut len = 0;
+            while unsafe { *pwstr.0.add(len) } != 0 && len < u16::MAX as usize {
+                len += 1;
+            }
+            len
+        };
+        let wide = unsafe { U16CString::from_ptr_str(pwstr.0) };
+        let len_bytes = (wide.len() * 2) as u16; // len() does not count the null terminator
+        let lsa = LSA_UNICODE_STRING {
+            Length: len_bytes,
+            MaximumLength: len_bytes,
+            Buffer: PWSTR(wide.as_ptr() as *mut _),
+        };
+        Self {
+            _keepalive: wide,
+            lsa,
+        }
+    }
+
+    pub fn as_lsa(&self) -> &LSA_UNICODE_STRING {
+        &self.lsa
+    }
+}
+
+pub struct LsaString {
+    _keepalive: String,
+    lsa: LSA_STRING,
+}
+
+impl LsaString {
+    pub fn new(s: &str) -> Self {
+        let keepalive = s.to_string();
+        let len = keepalive.len() as u16;
+        let lsa = LSA_STRING {
+            Length: len,
+            MaximumLength: len,
+            Buffer: PSTR(keepalive.as_ptr() as *mut u8),
+        };
+        Self {
+            _keepalive: keepalive,
+            lsa,
+        }
+    }
+
+    pub fn from_pcstr(pcstr: PCSTR) -> Self {
+        let mut len = 0;
+        while unsafe { *pcstr.0.add(len) } != 0 && len < u16::MAX as usize {
+            len += 1;
+        }
+        let slice = unsafe { std::slice::from_raw_parts(pcstr.0, len) };
+        let keepalive = String::from_utf8_lossy(slice).to_string();
+        let len = keepalive.len() as u16;
+        let lsa = LSA_STRING {
+            Length: len,
+            MaximumLength: len,
+            Buffer: PSTR(keepalive.as_ptr() as *mut u8),
+        };
+        Self {
+            _keepalive: keepalive,
+            lsa,
+        }
+    }
+
+    pub fn as_lsa(&self) -> &LSA_STRING {
+        &self.lsa
+    }
+}
+
+pub fn lsa_unicode_string_to_string(lsa: &LSA_UNICODE_STRING) -> String {
+    if lsa.Length == 0 || lsa.Buffer.is_null() {
+        return String::new();
+    }
+    let len_u16 = (lsa.Length / 2) as usize; // Length en bytes → chars
+    unsafe {
+        let slice = std::slice::from_raw_parts(lsa.Buffer.0, len_u16);
+        // Creamos una copia con terminador
+        let mut vec = slice.to_vec();
+        vec.push(0); // null terminator UTF‑16
+
+        widestring::U16CString::from_vec(vec)
+            .unwrap_or_default()
+            .to_string_lossy()
+    }
+}
+
 /// Packs a `KERB_INTERACTIVE_UNLOCK_LOGON` struct and its strings into a single buffer allocation.
-/// 
+///
 /// WinLogon and LSA consume "packed" KERB_INTERACTIVE_UNLOCK_LOGONs.
 /// This is basically the struct + all strings concatenated on a single buffer alloc.
-/// 
+///
 /// # Safety
 /// The caller must ensure that the provided `logon` reference is valid and that the returned pointer is properly managed and freed.
 /// Normally, the returned value should be used as output to COM so COM will release it.
@@ -70,7 +178,7 @@ pub unsafe fn kerb_interactive_unlock_logon_pack(
             )
         };
         debug_assert!(src.Length as usize <= src.MaximumLength as usize);
-        debug_assert!(src.Length & 1 == 0);  // Is even
+        debug_assert!(src.Length & 1 == 0); // Is even
 
         *dst_struct = *src;
         // Offset relative to the start of the struct
@@ -152,7 +260,7 @@ pub fn retrieve_negotiate_auth_package() -> windows::core::Result<u32> {
     if status.to_hresult().is_err() {
         return Err(status.into());
     }
-    let kerb_name = crate::util::com::LsaString::from_pcstr(NEGOSSP_NAME_A);
+    let kerb_name = LsaString::from_pcstr(NEGOSSP_NAME_A);
 
     let mut authenticationpackage = 0u32;
     // Convert LSA_UNICODE_STRING to LSA_STRING

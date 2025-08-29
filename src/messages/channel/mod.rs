@@ -306,8 +306,11 @@ impl Default for ChannelServer {
 
 impl Drop for ChannelServer {
     fn drop(&mut self) {
-        debug_dev!("Dropping ChannelServer, cleaning up resources");
-        self.pipe_handle.clear(); // Early drop
+        // Not really needed, but better safe than sorry :)
+        if self.pipe_handle.is_valid() {
+            debug_dev!("Dropping ChannelServer, cleaning up resources");
+            self.pipe_handle.clear(); // Early drop
+        }
     }
 }
 

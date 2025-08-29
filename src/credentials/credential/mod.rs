@@ -122,6 +122,16 @@ impl UDSCredential {
         credential.username.clone()
     }
 
+    pub fn password(&self) -> Zeroizing<Vec<u8>> {
+        let credential = self.credential.read().unwrap();
+        Zeroizing::new(credential.password.to_vec())
+    }
+
+    pub fn domain(&self) -> String {
+        let credential = self.credential.read().unwrap();
+        credential.domain.clone()
+    }
+
     pub fn set_usage_scenario(&mut self, cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO) {
         self.cpus = cpus;
     }

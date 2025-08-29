@@ -1,3 +1,4 @@
+#[cfg(debug_assertions)]
 use std::sync::{
     Arc, RwLock,
     atomic::{AtomicBool, Ordering},
@@ -23,6 +24,13 @@ use zeroize::Zeroize;
 use crate::debug_dev;
 use crate::{credentials::credential::UDSCredential, util::lsa};
 
+// Only available in tests
+#[cfg(test)]
+use std::sync::OnceLock;
+
+#[cfg(test)]
+static ASYNC_CREDS_HANDLE: OnceLock<RwLock<Option<std::thread::JoinHandle<()>>>> = OnceLock::new();
+
 #[implement(ICredentialProvider)]
 #[derive(Clone)]
 pub struct UDSCredentialsProvider {
@@ -34,7 +42,7 @@ pub struct UDSCredentialsProvider {
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {
-        let me = Self {
+        let me: UDSCredentialsProvider = Self {
             credential: Arc::new(RwLock::new(UDSCredential::new())),
             cookie: Arc::new(RwLock::new(None)),
             up_advise_context: Arc::new(RwLock::new(None)),
@@ -60,8 +68,7 @@ impl UDSCredentialsProvider {
             unsafe {
                 let events: ICredentialProviderEvents = crate::util::com::get_from_git(cookie)?;
 
-                // NOTE: The second parameter (upAdviseContext) is the one you received in Advise
-                //       If you don't have it stored, you can keep it along with the cookie.
+                // NOTE: The parameter (upAdviseContext) is the one we received in Advise
                 events.CredentialsChanged(self.up_advise_context.read().unwrap().unwrap())?;
             }
         }
@@ -72,7 +79,7 @@ impl UDSCredentialsProvider {
     fn async_creds_processor(&self) {
         let cred_provider = self.clone();
         let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
-        std::thread::spawn(move || {
+        let _tread_handle = std::thread::spawn(move || {
             let (thread_handle, channel_server) =
                 match crate::messages::channel::ChannelServer::run(&auth_token) {
                     Ok((thread_handle, channel_server)) => (thread_handle, channel_server),
@@ -96,6 +103,14 @@ impl UDSCredentialsProvider {
                 error!("ChannelServer thread join failed: {:?}", e);
             });
         });
+        #[cfg(test)]
+        {
+            ASYNC_CREDS_HANDLE
+                .get_or_init(|| RwLock::new(None))
+                .write()
+                .unwrap()
+                .replace(_tread_handle);
+        }
     }
 
     fn set_usage_scenario(
@@ -119,7 +134,7 @@ impl UDSCredentialsProvider {
     // In case of RDP (our initial implementation will be for RDP)
     // The username, password and domain will be those present on the logon request by the user
     #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn serialize(
+    fn unserialize(
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
@@ -284,7 +299,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        self.serialize(pcpcs)
+        self.unserialize(pcpcs)
     }
 
     fn Advise(

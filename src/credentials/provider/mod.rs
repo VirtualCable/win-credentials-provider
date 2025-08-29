@@ -98,29 +98,7 @@ impl UDSCredentialsProvider {
         });
     }
 
-    // Thread for running channel server and
-}
-
-impl Default for UDSCredentialsProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Drop for UDSCredentialsProvider {
-    fn drop(&mut self) {
-        self.stop_flag.store(true, Ordering::Relaxed);
-        // Unregister from GIT if needed
-        if let Some(cookie) = *self.cookie.read().unwrap()
-            && let Err(e) = crate::util::com::unregister_from_git(cookie)
-        {
-            error!("Failed to unregister from GIT: {:?}", e);
-        }
-    }
-}
-
-impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
-    fn SetUsageScenario(
+    fn set_usage_scenario(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         dwflags: u32,
@@ -141,7 +119,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     // In case of RDP (our initial implementation will be for RDP)
     // The username, password and domain will be those present on the logon request by the user
     #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn SetSerialization(
+    fn serialize(
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
@@ -197,20 +175,20 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         Ok(())
     }
 
-    fn Advise(
+    fn register_event_manager(
         &self,
-        pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
+        pcpe: ICredentialProviderEvents,
         upadvisecontext: usize,
     ) -> windows::core::Result<()> {
         // Store for using later
-        let cookie = crate::util::com::register_in_git(pcpe.clone().unwrap())?;
+        let cookie = crate::util::com::register_in_git(pcpe)?;
         *self.cookie.write().unwrap() = Some(cookie);
         // Context used with ICredentialProviderEvents
         *self.up_advise_context.write().unwrap() = Some(upadvisecontext);
         Ok(())
     }
 
-    fn UnAdvise(&self) -> windows::core::Result<()> {
+    fn unregister_event_manager(&self) -> windows::core::Result<()> {
         if let Some(cookie) = *self.cookie.write().unwrap() {
             crate::util::com::unregister_from_git(cookie)?;
             *self.cookie.write().unwrap() = None;
@@ -219,28 +197,22 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         Ok(())
     }
 
-    fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
-        Ok(crate::credentials::types::UdsFieldId::NumFields as u32)
+    fn number_of_fields(&self) -> u32 {
+        crate::credentials::types::UdsFieldId::NumFields as u32
     }
 
-    fn GetFieldDescriptorAt(
+    fn get_field_descriptor_at(
         &self,
-        dwindex: u32,
+        index: u32,
     ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
-        if dwindex >= crate::credentials::types::UdsFieldId::NumFields as u32 {
+        if index >= self.number_of_fields() {
             return Err(windows::core::Error::from_hresult(E_INVALIDARG));
         }
-        crate::credentials::fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[dwindex as usize]
+        crate::credentials::fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[index as usize]
             .into_com_alloc()
     }
 
-    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn GetCredentialCount(
-        &self,
-        pdwcount: *mut u32,
-        pdwdefault: *mut u32,
-        pbautologonwithdefault: *mut windows::core::BOOL,
-    ) -> windows::core::Result<()> {
+    fn get_credential_count(&self) -> windows::core::Result<(u32, u32, BOOL)> {
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
         let is_rdp = crate::util::helpers::is_rdp_session();
@@ -253,28 +225,108 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
             has_valid_creds
         );
 
-        // If 0, our provider will not be shown
-        unsafe { *pdwcount = 1 };
+        let pdwcount = 1; // If 0, our provider will not be shown
 
-        if is_rdp && has_valid_creds {
-            unsafe {
-                *pdwdefault = 0;
-                *pbautologonwithdefault = true.into();
-            }
+        let (pwdefault, pwautologonwithdefault) = if is_rdp && has_valid_creds {
+            (0, true.into())
         } else {
-            unsafe {
-                *pdwdefault = CREDENTIAL_PROVIDER_NO_DEFAULT;
-                *pbautologonwithdefault = false.into();
-            }
-        }
-        Ok(())
+            (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+        };
+        Ok((pdwcount, pwdefault, pwautologonwithdefault))
     }
 
-    fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
-        if dwindex == 0 {
+    fn get_credential_at(
+        &self,
+        index: u32,
+    ) -> windows::core::Result<ICredentialProviderCredential> {
+        if index == 0 {
             Ok(self.credential.read().unwrap().clone().into())
         } else {
             Err(windows::core::Error::from_hresult(E_INVALIDARG))
         }
     }
+
+    // Thread for running channel server and
 }
+
+impl Default for UDSCredentialsProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for UDSCredentialsProvider {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+        // Unregister from GIT if needed
+        if let Some(cookie) = *self.cookie.read().unwrap()
+            && let Err(e) = crate::util::com::unregister_from_git(cookie)
+        {
+            error!("Failed to unregister from GIT: {:?}", e);
+        }
+    }
+}
+
+impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
+    fn SetUsageScenario(
+        &self,
+        cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+        dwflags: u32,
+    ) -> windows::core::Result<()> {
+        self.set_usage_scenario(cpus, dwflags)
+    }
+
+    // This will receive the credentials provided by the user
+    // In case of RDP (our initial implementation will be for RDP)
+    // The username, password and domain will be those present on the logon request by the user
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
+    fn SetSerialization(
+        &self,
+        pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+    ) -> windows::core::Result<()> {
+        self.serialize(pcpcs)
+    }
+
+    fn Advise(
+        &self,
+        pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
+        upadvisecontext: usize,
+    ) -> windows::core::Result<()> {
+        self.register_event_manager(pcpe.unwrap().clone(), upadvisecontext)
+    }
+
+    fn UnAdvise(&self) -> windows::core::Result<()> {
+        self.unregister_event_manager()
+    }
+
+    fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
+        Ok(self.number_of_fields())
+    }
+
+    fn GetFieldDescriptorAt(
+        &self,
+        dwindex: u32,
+    ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
+        self.get_field_descriptor_at(dwindex)
+    }
+
+    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
+    fn GetCredentialCount(
+        &self,
+        pdwcount: *mut u32,
+        pdwdefault: *mut u32,
+        pbautologonwithdefault: *mut windows::core::BOOL,
+    ) -> windows::core::Result<()> {
+        // If we have redirected credentials, SetSerialization will be invoked prior us
+        // If not, we allow interactive logon
+        unsafe { (*pdwcount, *pdwdefault, *pbautologonwithdefault) = self.get_credential_count()? };
+        Ok(())
+    }
+
+    fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
+        self.get_credential_at(dwindex)
+    }
+}
+
+#[cfg(test)]
+mod tests;

@@ -110,3 +110,6 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

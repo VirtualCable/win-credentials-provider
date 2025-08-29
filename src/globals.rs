@@ -20,6 +20,9 @@ static AUTHTOKEN: OnceLock<RwLock<Option<String>>> = OnceLock::new();
 // Broker info
 static BROKER_INFO: OnceLock<RwLock<Option<BrokerInfo>>> = OnceLock::new();
 
+// PIPE NAME
+static PIPE_NAME: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+
 #[derive(Clone, Copy)]
 struct SafeHInstance(HINSTANCE);
 
@@ -92,4 +95,15 @@ pub fn get_broker_info() -> Option<BrokerInfo> {
     BROKER_INFO
         .get()
         .and_then(|lock| lock.read().unwrap().clone())
+}
+
+pub fn get_pipe_name() -> String {
+    PIPE_NAME
+        .get()
+        .and_then(|lock| lock.read().unwrap().clone())
+        .unwrap_or(crate::messages::consts::PIPE_NAME.to_string())
+}
+
+pub fn set_pipe_name(name: &str) {
+    PIPE_NAME.get_or_init(|| RwLock::new(Some(name.to_string())));
 }

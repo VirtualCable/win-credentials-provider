@@ -21,8 +21,8 @@ use windows::{
 use log::error;
 use zeroize::Zeroize;
 
-use crate::debug_dev;
 use crate::{credentials::credential::UDSCredential, util::lsa};
+use crate::{debug_dev, globals};
 
 // Only available in tests
 #[cfg(test)]
@@ -81,7 +81,10 @@ impl UDSCredentialsProvider {
         let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
         let _tread_handle = std::thread::spawn(move || {
             let (thread_handle, channel_server) =
-                match crate::messages::channel::ChannelServer::run(&auth_token) {
+                match crate::messages::channel::ChannelServer::run_with_pipe(
+                    &auth_token,
+                    Some(globals::get_pipe_name().as_str()),
+                ) {
                     Ok((thread_handle, channel_server)) => (thread_handle, channel_server),
                     Err(e) => {
                         error!("Failed to start ChannelServer: {:?}", e);
@@ -116,9 +119,7 @@ impl UDSCredentialsProvider {
     fn set_usage_scenario(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        dwflags: u32,
     ) -> windows::core::Result<()> {
-        debug_dev!("SetUsageScenario called: {:?} {}", cpus, dwflags);
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
                 self.credential.write().unwrap().reset();
@@ -286,9 +287,10 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     fn SetUsageScenario(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        dwflags: u32,
+        _dwflags: u32,
     ) -> windows::core::Result<()> {
-        self.set_usage_scenario(cpus, dwflags)
+        debug_dev!("SetUsageScenario called: {:?} {}", cpus, _dwflags);
+        self.set_usage_scenario(cpus)
     }
 
     // This will receive the credentials provided by the user

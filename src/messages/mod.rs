@@ -1,3 +1,3 @@
 pub mod auth;
 pub mod channel;
-mod consts;
+pub mod consts;

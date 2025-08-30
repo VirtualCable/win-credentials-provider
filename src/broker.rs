@@ -4,8 +4,8 @@ use windows_core::Result;
 
 use crate::globals;
 
-const BROKER_CREDENTIAL_PREFIX: &str = "broker:";  // Broker credential prefix
-const BROKER_CREDENTIAL_SIZE: usize = 48;          // Broker credential size
+pub const BROKER_CREDENTIAL_PREFIX: &str = "uds:";  // Broker credential prefix
+pub const BROKER_CREDENTIAL_SIZE: usize = 48;          // Broker credential size
 
 /// Returns true if the credential is for the broker
 pub fn is_broker_credential(username: &str) -> bool {

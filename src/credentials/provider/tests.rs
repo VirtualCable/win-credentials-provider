@@ -1,11 +1,17 @@
 use std::time::Instant;
 
-use windows::Win32::UI::Shell::ICredentialProviderEvents_Impl;
+use rand::{Rng, distr};
+use windows::Win32::{
+    Security::Authentication::Identity::{
+        KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
+    },
+    UI::Shell::ICredentialProviderEvents_Impl,
+};
 use zeroize::Zeroizing;
 
 use super::*;
 
-use crate::util::{com::ComInitializer, logger::setup_logging};
+use crate::util::{com::ComInitializer, logger::setup_logging, lsa::LsaUnicodeString};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
@@ -166,6 +172,105 @@ fn test_set_usage_scenario_plap() -> Result<()> {
     Ok(())
 }
 
+fn generate_broker_username() -> String {
+    // Calc user name that comply with rules on crate::broker
+    // const BROKER_CREDENTIAL_PREFIX  // Broker credential prefix
+    // const BROKER_CREDENTIAL_SIZE    // Broker credential size
+    format!(
+        "{}{}",
+        crate::broker::BROKER_CREDENTIAL_PREFIX,
+        rand::rng()
+            .sample_iter(&rand::distr::Alphanumeric)
+            .take(
+                crate::broker::BROKER_CREDENTIAL_SIZE
+                    - crate::broker::BROKER_CREDENTIAL_PREFIX.len()
+            )
+            .map(char::from)
+            .collect::<String>()
+    )
+}
+
+fn get_credential_serialization(
+    username: &str,
+    password: &str,
+    domain: &str,
+    guid: GUID,
+) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
+    let _lsa_user = LsaUnicodeString::new(&username);
+    let _lsa_pass = LsaUnicodeString::new(password);
+    let _lsa_domain = LsaUnicodeString::new(domain);
+
+    let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
+        Logon: KERB_INTERACTIVE_LOGON {
+            MessageType: KerbInteractiveLogon,
+            LogonDomainName: *_lsa_domain.as_lsa(),
+            UserName: *_lsa_user.as_lsa(),
+            Password: *_lsa_pass.as_lsa(),
+        },
+        LogonId: Default::default(),
+    };
+    // Pack the logon
+    let (packed, size) = unsafe { crate::util::lsa::kerb_interactive_unlock_logon_pack(&logon)? };
+
+    Ok(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
+        ulAuthenticationPackage: 0,
+        clsidCredentialProvider: guid,
+        cbSerialization: size,
+        rgbSerialization: packed,
+    })
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_unserialize_ok() -> Result<()> {
+    let provider = create_provider("008");
+    let username = generate_broker_username();
+    let cred_serial = get_credential_serialization(
+        &username,
+        "password",
+        "domain",
+        crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+
+    provider.unserialize(&cred_serial).unwrap(); // If fails will stop here
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_unserialize_bad_guid() -> Result<()> {
+    let provider = create_provider("008");
+    let cred_serial = get_credential_serialization(
+        &generate_broker_username(),
+        "password",
+        "domain",
+        GUID::from(9),
+    )?;
+
+    // Should fail
+    assert!(provider.unserialize(&cred_serial).is_err());
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_unserialize_invalid_username() -> Result<()> {
+    let provider = create_provider("008");
+    let cred_serial = get_credential_serialization(
+        "username",
+        "password",
+        "domain",
+        crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+
+    // Should fail
+    assert!(provider.unserialize(&cred_serial).is_err());
+
+    Ok(())
+}
+
 #[derive(Clone)]
 // Fake ICredentialProviderEvents for tests
 #[implement(ICredentialProviderEvents)]
@@ -195,7 +300,7 @@ fn test_register_get_unregister_event_manager() -> Result<()> {
     // This is a test, we do not have CoInitialize called in our thread
     let _com_init = ComInitializer::new();
 
-    let provider = create_provider("008");
+    let provider = create_provider("009");
     let events = TestingCredentialProviderEvents::default();
     let event_impl: ICredentialProviderEvents = events.clone().into();
     provider.register_event_manager(event_impl, 0x120909)?;

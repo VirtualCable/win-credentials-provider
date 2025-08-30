@@ -2,7 +2,8 @@ use std::{mem, ptr};
 use widestring::U16CString;
 
 use windows::{
-    core::{IUnknown, Interface, GUID, PCWSTR, PWSTR}, Win32::System::Com::{CoCreateInstance, CoTaskMemAlloc, CoTaskMemFree, IGlobalInterfaceTable}
+    Win32::System::Com::{CoCreateInstance, CoTaskMemAlloc, CoTaskMemFree, IGlobalInterfaceTable},
+    core::{GUID, IUnknown, Interface, PCWSTR, PWSTR},
 };
 
 pub const CLSID_STD_GLOBAL_INTERFACE_TABLE: GUID =
@@ -25,11 +26,7 @@ pub fn alloc_pwstr(s: &str) -> Result<PWSTR, AllocPwstrError> {
         if mem.is_null() {
             return Err(AllocPwstrError::AllocationFailed);
         }
-        ptr::copy_nonoverlapping(
-            wide.as_ptr(),
-            mem,
-            len,
-        );
+        ptr::copy_nonoverlapping(wide.as_ptr(), mem, len);
         Ok(PWSTR(mem))
     }
 }
@@ -118,7 +115,7 @@ pub fn unregister_from_git(cookie: u32) -> windows::core::Result<()> {
 ///
 /// # Safety
 /// - The caller must ensure the cookie refers to a still‑valid interface of type `T`.
-/// - COM must be initialized before calling.
+/// - COM must be initialized before calling. (This is ensured if we use this in a Com impl)
 pub fn get_from_git<T: Interface>(cookie: u32) -> windows::core::Result<T> {
     let mut ptr = std::ptr::null_mut();
     let git = get_git()?;
@@ -128,7 +125,35 @@ pub fn get_from_git<T: Interface>(cookie: u32) -> windows::core::Result<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, RwLock};
+
+    use windows::{
+        Win32::System::Com::{
+            COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, IPersist, IPersist_Impl,
+        },
+        core::{GUID, implement},
+    };
+
     use super::*;
+
+    // Simple interface for testing register/unregister
+    #[derive(Clone)]
+    #[implement(IPersist)]
+    struct TestCom {
+        guid: Arc<RwLock<Option<GUID>>>,
+    }
+
+    impl IPersist_Impl for TestCom_Impl {
+        fn GetClassID(&self) -> windows_core::Result<windows_core::GUID> {
+            // Set a new guid, se we know it hase benn invoked correctly
+            self.guid
+                .write()
+                .unwrap()
+                .replace(GUID::from_u128(0x12345678_1234_1234_1234_1234567890ab));
+
+            Ok(self.guid.read().unwrap().unwrap())
+        }
+    }
 
     #[test]
     fn test_alloc_pwstr() {
@@ -138,6 +163,43 @@ mod tests {
         assert_eq!(s, converted);
         unsafe {
             windows::Win32::System::Com::CoTaskMemFree(Some(pwstr.0 as _));
+        }
+    }
+
+    #[test]
+    fn test_register_get_unregiser() {
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED)
+                .map(|| ())
+                .unwrap()
+        };
+
+        let com = TestCom {
+            guid: Arc::new(RwLock::new(None)),
+        };
+        assert_eq!(*com.guid.read().unwrap(), None);
+        let com_impl: IUnknown = com.clone().into();
+        let cookie = register_in_git(com_impl).expect("Failed to register COM object");
+        let retrieved: IPersist = get_from_git(cookie).expect("Failed to get COM object");
+        let guid = unsafe { retrieved.GetClassID().expect("Failed to get class ID") };
+        assert_eq!(
+            guid,
+            GUID::from_u128(0x12345678_1234_1234_1234_1234567890ab)
+        );
+        assert_eq!(
+            com.guid.read().unwrap().unwrap(),
+            GUID::from_u128(0x12345678_1234_1234_1234_1234567890ab)
+        );
+
+        unregister_from_git(cookie).expect("Failed to unregister COM object");
+
+        assert!(
+            get_from_git::<IPersist>(cookie).is_err(),
+            "Expected error when getting unregistered COM object"
+        );
+
+        unsafe {
+            CoUninitialize();
         }
     }
 }

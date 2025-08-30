@@ -56,11 +56,11 @@ impl ChannelServer {
     }
 
     pub fn stop(&self) {
-        self.stop_flag.store(true, Ordering::SeqCst);
+        self.stop_flag.store(true, Ordering::Relaxed);
     }
 
     pub fn is_stopped(&self) -> bool {
-        self.stop_flag.load(Ordering::SeqCst)
+        self.stop_flag.load(Ordering::Relaxed)
     }
 
     pub fn get_request(&self) -> Option<AuthRequest> {

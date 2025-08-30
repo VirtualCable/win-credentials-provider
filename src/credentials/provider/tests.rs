@@ -15,7 +15,7 @@ fn create_provider(pipe_prefix: &str) -> UDSCredentialsProvider {
     setup_logging("info");
     globals::set_pipe_name(&("\\\\.\\pipe\\TestCom".to_string() + pipe_prefix));
     let provider = UDSCredentialsProvider::new();
-    provider.stop_flag.store(true, Ordering::SeqCst);
+    provider.stop_flag.store(true, Ordering::Relaxed);
     provider
 }
 
@@ -50,7 +50,7 @@ fn test_uds_credential_provider_new() -> Result<()> {
             .is_finished()
     );
     // Stop the task
-    provider.stop_flag.store(true, Ordering::SeqCst);
+    provider.stop_flag.store(true, Ordering::Relaxed);
 
     // Task should stop in a while, just wait
     let task_handle = ASYNC_CREDS_HANDLE

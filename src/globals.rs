@@ -108,6 +108,15 @@ pub fn get_broker_info() -> Option<BrokerInfo> {
         .and_then(|lock| lock.read().unwrap().clone())
 }
 
+#[cfg(test)]
+pub fn reset_broker_info() {
+    BROKER_INFO
+        .get_or_init(|| RwLock::new(Some(BrokerInfo::default())))
+        .write()
+        .unwrap()
+        .take();
+}
+
 pub fn get_pipe_name() -> String {
     let name = PIPE_NAME
         .get()

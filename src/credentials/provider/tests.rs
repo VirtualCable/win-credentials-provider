@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use rand::{Rng, distr};
+use rand::Rng;
 use windows::Win32::{
     Security::Authentication::Identity::{
         KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
@@ -196,7 +196,7 @@ fn get_credential_serialization(
     domain: &str,
     guid: GUID,
 ) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
-    let _lsa_user = LsaUnicodeString::new(&username);
+    let _lsa_user = LsaUnicodeString::new(username);
     let _lsa_pass = LsaUnicodeString::new(password);
     let _lsa_domain = LsaUnicodeString::new(domain);
 
@@ -223,6 +223,9 @@ fn get_credential_serialization(
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_unserialize_ok() -> Result<()> {
+    // Ensure broker info is None, so no request is done.
+    // Wil generate a log of the failure, but no problem, it's fine
+    crate::globals::reset_broker_info();
     let provider = create_provider("008");
     let username = generate_broker_username();
     let cred_serial = get_credential_serialization(

@@ -36,7 +36,7 @@ static ASYNC_CREDS_HANDLE: OnceLock<RwLock<Option<std::thread::JoinHandle<()>>>>
 pub struct UDSCredentialsProvider {
     credential: Arc<RwLock<UDSCredential>>,
     cookie: Arc<RwLock<Option<u32>>>,
-    up_advise_context: Arc<RwLock<Option<usize>>>,
+    up_advise_context: Arc<RwLock<usize>>,
     stop_flag: Arc<AtomicBool>,
 }
 
@@ -45,7 +45,7 @@ impl UDSCredentialsProvider {
         let me: UDSCredentialsProvider = Self {
             credential: Arc::new(RwLock::new(UDSCredential::new())),
             cookie: Arc::new(RwLock::new(None)),
-            up_advise_context: Arc::new(RwLock::new(None)),
+            up_advise_context: Arc::new(RwLock::new(0)),
             stop_flag: Arc::new(AtomicBool::new(false)),
         };
         // Start the async credentials receiver by the pipe processor
@@ -63,14 +63,9 @@ impl UDSCredentialsProvider {
             .unwrap()
             .set_credentials(&msg.username, &msg.password, &msg.domain);
 
-        // If we have a cookie, retrieve the interface from the GIT
-        if let Some(cookie) = *self.cookie.read().unwrap() {
-            unsafe {
-                let events: ICredentialProviderEvents = crate::util::com::get_from_git(cookie)?;
-
-                // NOTE: The parameter (upAdviseContext) is the one we received in Advise
-                events.CredentialsChanged(self.up_advise_context.read().unwrap().unwrap())?;
-            }
+        // If we have an event manager, notify it of the credential change
+        if let Some(event_manager) = self.get_event_manager()? {
+            unsafe { event_manager.CredentialsChanged(*self.up_advise_context.read().unwrap())? };
         }
 
         Ok(())
@@ -79,11 +74,13 @@ impl UDSCredentialsProvider {
     fn async_creds_processor(&self) {
         let cred_provider = self.clone();
         let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
-        let _tread_handle = std::thread::spawn(move || {
+        let pipe_name = globals::get_pipe_name();
+        debug_dev!("Starting async credentials receiver with pipe name: {}", pipe_name);
+        let _thread_handle = std::thread::spawn(move || {
             let (thread_handle, channel_server) =
                 match crate::messages::channel::ChannelServer::run_with_pipe(
                     &auth_token,
-                    Some(globals::get_pipe_name().as_str()),
+                    Some(pipe_name.as_str()),
                 ) {
                     Ok((thread_handle, channel_server)) => (thread_handle, channel_server),
                     Err(e) => {
@@ -112,7 +109,7 @@ impl UDSCredentialsProvider {
                 .get_or_init(|| RwLock::new(None))
                 .write()
                 .unwrap()
-                .replace(_tread_handle);
+                .replace(_thread_handle);
         }
     }
 
@@ -145,7 +142,7 @@ impl UDSCredentialsProvider {
             }
             debug_dev!("SetSerialization called with our CLSID");
             let mut rgb_serialization = vec![0; (*pcpcs).cbSerialization as usize];
-            // Copy the serialization data
+            // Copy the data to unserialize
             rgb_serialization.copy_from_slice(std::slice::from_raw_parts(
                 (*pcpcs).rgbSerialization,
                 (*pcpcs).cbSerialization as usize,
@@ -200,17 +197,29 @@ impl UDSCredentialsProvider {
         let cookie = crate::util::com::register_in_git(pcpe)?;
         *self.cookie.write().unwrap() = Some(cookie);
         // Context used with ICredentialProviderEvents
-        *self.up_advise_context.write().unwrap() = Some(upadvisecontext);
+        *self.up_advise_context.write().unwrap() = upadvisecontext;
         Ok(())
     }
 
     fn unregister_event_manager(&self) -> windows::core::Result<()> {
-        if let Some(cookie) = *self.cookie.write().unwrap() {
+        let cookie_opt = {
+            let guard = self.cookie.read().unwrap();
+            *guard
+        };
+        if let Some(cookie) = cookie_opt {
             crate::util::com::unregister_from_git(cookie)?;
             *self.cookie.write().unwrap() = None;
-            *self.up_advise_context.write().unwrap() = None;
+            *self.up_advise_context.write().unwrap() = 0;
         }
         Ok(())
+    }
+
+    fn get_event_manager(&self) -> windows::core::Result<Option<ICredentialProviderEvents>> {
+        if let Some(cookie) = *self.cookie.read().unwrap() {
+            Ok(Some(crate::util::com::get_from_git(cookie)?))
+        } else {
+            Ok(None)
+        }
     }
 
     fn number_of_fields(&self) -> u32 {
@@ -275,7 +284,11 @@ impl Drop for UDSCredentialsProvider {
     fn drop(&mut self) {
         self.stop_flag.store(true, Ordering::Relaxed);
         // Unregister from GIT if needed
-        if let Some(cookie) = *self.cookie.read().unwrap()
+        let cookie_opt = {
+            let guard = self.cookie.read().unwrap();
+            *guard
+        };
+        if let Some(cookie) = cookie_opt
             && let Err(e) = crate::util::com::unregister_from_git(cookie)
         {
             error!("Failed to unregister from GIT: {:?}", e);

@@ -1,17 +1,27 @@
 use std::time::Instant;
 
+use windows::Win32::UI::Shell::ICredentialProviderEvents_Impl;
 use zeroize::Zeroizing;
 
 use super::*;
 
-use crate::util::logger::setup_logging;
+use crate::util::{com::ComInitializer, logger::setup_logging};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
-// BUT as the provider reads the pipe name from globals, we must serializea
+// BUT as the provider reads the pipe name from globals, we must serialize them
 
+// Creates a provider, and stop the channel thread instantly
 fn create_provider(pipe_prefix: &str) -> UDSCredentialsProvider {
     setup_logging("info");
-    globals::set_pipe_name(&("\\\\.\\pipe\\UDSCredsComms".to_string() + pipe_prefix));
+    globals::set_pipe_name(&("\\\\.\\pipe\\TestCom".to_string() + pipe_prefix));
+    let provider = UDSCredentialsProvider::new();
+    provider.stop_flag.store(true, Ordering::SeqCst);
+    provider
+}
+
+fn create_provider_with_channel(pipe_prefix: &str) -> UDSCredentialsProvider {
+    setup_logging("info");
+    globals::set_pipe_name(&("\\\\.\\pipe\\TestComCh".to_string() + pipe_prefix));
     UDSCredentialsProvider::new()
 }
 
@@ -21,7 +31,7 @@ fn test_uds_credential_provider_new() -> Result<()> {
     // Wait a bit to ensure previous test closed the pipe
     // In fact, rest of tasks, even with the thead creation "failed"
     // Is not problematic, because they are designed so
-    let provider = create_provider("_test_uds_credential_provider_new");
+    let provider = create_provider_with_channel("001");
     std::thread::sleep(std::time::Duration::from_millis(222));
     // Should have the ASYNC_CREDS_HANDLE sent with a handle
     assert!(ASYNC_CREDS_HANDLE.get().is_some());
@@ -67,7 +77,7 @@ fn test_uds_credential_provider_new() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_on_data_arrived() -> Result<()> {
-    let provider = create_provider("_test_on_data_arrived");
+    let provider = create_provider("00x2");
     // Simulate incoming data
     let auth_request = crate::messages::auth::AuthRequest {
         protocol_version: 1,
@@ -88,7 +98,7 @@ fn test_on_data_arrived() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_logon() -> Result<()> {
-    let provider = create_provider("_test_set_usage_scenario_logon");
+    let provider = create_provider("003");
     // Setup credential so we can check they are cleaned
     provider
         .credential
@@ -109,7 +119,7 @@ fn test_set_usage_scenario_logon() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_unlock() -> Result<()> {
-    let provider = create_provider("_test_set_usage_scenario_unlock");
+    let provider = create_provider("004");
     // Setup credential so we can check they are cleaned
     provider
         .credential
@@ -129,7 +139,7 @@ fn test_set_usage_scenario_unlock() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_cred_ui() -> Result<()> {
-    let provider = create_provider("_test_set_usage_scenario_cred_ui");
+    let provider = create_provider("005");
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_CREDUI).is_err());
 
@@ -139,7 +149,7 @@ fn test_set_usage_scenario_cred_ui() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_change_password() -> Result<()> {
-    let provider = create_provider("_test_set_usage_scenario_change_password");
+    let provider = create_provider("006");
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_CHANGE_PASSWORD).is_err());
 
@@ -149,9 +159,61 @@ fn test_set_usage_scenario_change_password() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_plap() -> Result<()> {
-    let provider = create_provider("_test_set_usage_scenario_plap");
+    let provider = create_provider("007");
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_PLAP).is_err());
+
+    Ok(())
+}
+
+#[derive(Clone)]
+// Fake ICredentialProviderEvents for tests
+#[implement(ICredentialProviderEvents)]
+struct TestingCredentialProviderEvents {
+    up_advise_context: Arc<RwLock<usize>>,
+}
+
+impl Default for TestingCredentialProviderEvents {
+    fn default() -> Self {
+        Self {
+            up_advise_context: Arc::new(RwLock::new(0)),
+        }
+    }
+}
+
+impl ICredentialProviderEvents_Impl for TestingCredentialProviderEvents_Impl {
+    fn CredentialsChanged(&self, upadvisecontext: usize) -> windows_core::Result<()> {
+        let mut context = self.up_advise_context.write().unwrap();
+        *context = upadvisecontext;
+        Ok(())
+    }
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_register_get_unregister_event_manager() -> Result<()> {
+    // This is a test, we do not have CoInitialize called in our thread
+    let _com_init = ComInitializer::new();
+
+    let provider = create_provider("008");
+    let events = TestingCredentialProviderEvents::default();
+    let event_impl: ICredentialProviderEvents = events.clone().into();
+    provider.register_event_manager(event_impl, 0x120909)?;
+
+    assert!(provider.cookie.read().unwrap().is_some());
+    assert!(*provider.up_advise_context.read().unwrap() == 0x120909);
+
+    // Invoke it
+    let event_manager = provider.get_event_manager()?;
+    unsafe { event_manager.unwrap().CredentialsChanged(0xdeadbeef)? };
+
+    assert_eq!(*events.up_advise_context.read().unwrap(), 0xdeadbeef);
+
+    // Unregister
+    provider.unregister_event_manager()?;
+
+    assert!(provider.cookie.read().unwrap().is_none());
+    assert!(*provider.up_advise_context.read().unwrap() == 0);
 
     Ok(())
 }

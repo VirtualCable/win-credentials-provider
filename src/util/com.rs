@@ -2,7 +2,10 @@ use std::{mem, ptr};
 use widestring::U16CString;
 
 use windows::{
-    Win32::System::Com::{CoCreateInstance, CoTaskMemAlloc, CoTaskMemFree, IGlobalInterfaceTable},
+    Win32::System::Com::{
+        COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemAlloc, CoTaskMemFree,
+        CoUninitialize, IGlobalInterfaceTable,
+    },
     core::{GUID, IUnknown, Interface, PCWSTR, PWSTR},
 };
 
@@ -123,14 +126,37 @@ pub fn get_from_git<T: Interface>(cookie: u32) -> windows::core::Result<T> {
     Ok(unsafe { T::from_raw(ptr as _) })
 }
 
+pub struct ComInitializer;
+
+impl ComInitializer {
+    pub fn new() -> Self {
+        unsafe {
+            _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        }
+        Self
+    }
+}
+
+impl Default for ComInitializer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for ComInitializer {
+    fn drop(&mut self) {
+        unsafe {
+            CoUninitialize();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, RwLock};
 
     use windows::{
-        Win32::System::Com::{
-            COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize, IPersist, IPersist_Impl,
-        },
+        Win32::System::Com::{COINIT_APARTMENTTHREADED, IPersist, IPersist_Impl},
         core::{GUID, implement},
     };
 
@@ -167,7 +193,8 @@ mod tests {
     }
 
     #[test]
-    fn test_register_get_unregiser() {
+    fn test_register_get_unregister() {
+        let _com_init = ComInitializer::new();
         unsafe {
             CoInitializeEx(None, COINIT_APARTMENTTHREADED)
                 .map(|| ())
@@ -197,9 +224,5 @@ mod tests {
             get_from_git::<IPersist>(cookie).is_err(),
             "Expected error when getting unregistered COM object"
         );
-
-        unsafe {
-            CoUninitialize();
-        }
     }
 }

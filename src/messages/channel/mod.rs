@@ -4,7 +4,7 @@ use log::error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
+use windows::Win32::Foundation::{GetLastError, HANDLE, INVALID_HANDLE_VALUE};
 use windows::Win32::Storage::FileSystem::*;
 use windows::Win32::System::Pipes::*;
 use windows::core::PCWSTR;
@@ -64,7 +64,7 @@ impl ChannelServer {
     }
 
     pub fn get_request(&self) -> Option<AuthRequest> {
-        let mut request = self.request.lock().unwrap();
+        let mut request: std::sync::MutexGuard<'_, Option<AuthRequest>> = self.request.lock().unwrap();
         request.take() // Take the request, leaving None in the mutex
     }
 
@@ -73,6 +73,7 @@ impl ChannelServer {
         pipe_name: Option<&str>,
     ) -> Result<(std::thread::JoinHandle<()>, ChannelServer)> {
         let pipe_name = pipe_name.unwrap_or(consts::PIPE_NAME).to_string();
+        debug_dev!("Using pipe name: {}", &pipe_name);
         let server = ChannelServer::create(&pipe_name)
             .ok()
             .context("Failed to create ChannelServer")?;
@@ -134,8 +135,12 @@ impl ChannelServer {
         };
 
         if handle == INVALID_HANDLE_VALUE {
-            error!("Failed to create named pipe {}", consts::PIPE_NAME);
-            return Err(anyhow::anyhow!("Failed to create named pipe"));
+            let err = unsafe { GetLastError() };
+            error!("Failed to create named pipe {}: {}", name, err.0);
+            return Err(anyhow::anyhow!(format!(
+                "Failed to create named pipe {}: {}",
+                name, err.0
+            )));
         }
 
         Ok(handle)

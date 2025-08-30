@@ -22,17 +22,8 @@ pub fn get_credentials_from_broker(
 
     match broker_info {
         Some(info) => {
-            #[cfg(test)] // Only for testing will allow this
             if info.url().is_empty() {
-                let username = token;
-                let password = shared_secret;
-                let domain = scrambler;
-
-                return Ok((
-                    username.to_string(),
-                    password.to_string(),
-                    domain.to_string(),
-                ));
+                return Err(E_FAIL.into());
             }
 
             let client = HttpRequestClient::new().with_verify_ssl(info.verify_ssl());
@@ -74,5 +65,73 @@ pub fn get_credentials_from_broker(
             warn!("Broker information is not set");
             Err(E_FAIL.into())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{debug_dev, util::logger};
+
+    #[test]
+    fn test_is_broker_credential() {
+        logger::setup_logging("debug");
+        assert!(is_broker_credential(
+            "uds:12345678901234567890123456789012345678901234"
+        ));
+        assert!(!is_broker_credential("uds:short"));
+        assert!(!is_broker_credential("not_a_broker_credential"));
+    }
+
+    #[test]
+    #[serial_test::serial(broker_info)]
+    fn test_get_credentials_from_broker_valid_info() {
+        logger::setup_logging("debug");
+        let mut server = mockito::Server::new();
+
+        let mock = server
+            .mock("POST", "/credential")
+            .with_status(200)
+            .with_header("Content-Type", "application/json")
+            .with_body(r#"{"username":"test_user","password":"test_pass","domain":"test_domain"}"#)
+            .match_request(|request| {
+                let body = request
+                    .body()
+                    .unwrap()
+                    .to_vec()
+                    .iter()
+                    .map(|&c| c as char)
+                    .collect::<String>();
+                debug_dev!("Request body: {}", body);
+                let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+                v.get("token") == Some(&serde_json::Value::String("token".into()))
+                    && v.get("shared_secret")
+                        == Some(&serde_json::Value::String("shared_secret".into()))
+                    && v.get("scrambler") == Some(&serde_json::Value::String("scrambler".into()))
+            })
+            .create();
+
+        let url = server.url() + "/credential";
+
+        globals::set_broker_info(&url, true); // Is http, so ssl does not mind here
+        let result = get_credentials_from_broker("token", "shared_secret", "scrambler");
+        assert!(result.is_ok());
+
+        // Check the returned values
+        let (username, password, domain) = result.unwrap();
+        assert_eq!(username, "test_user");
+        assert_eq!(password, "test_pass");
+        assert_eq!(domain, "test_domain");
+
+        mock.assert();
+    }
+
+    #[test]
+    #[serial_test::serial(broker_info)]
+    fn test_get_credentials_from_broker_no_info() {
+        logger::setup_logging("debug");
+        globals::set_broker_info("", false);
+        let result = get_credentials_from_broker("token", "shared_secret", "scrambler");
+        assert!(result.is_err());
     }
 }

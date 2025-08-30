@@ -92,24 +92,18 @@ fn test_set_string_value() {
     let credential = UDSCredential::new();
     for field_id in 0..UdsFieldId::NumFields as u32 {
         let value = format!("value{}", field_id);
-        let pwstr: PCWSTR = crate::util::com::alloc_pwstr(&value).unwrap().to();
+        let pcwstr: PCWSTR = crate::util::com::alloc_pwstr(&value).unwrap().to();
         let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
-        let res = credential.set_string_value(field_id, &pwstr);
+        let res = credential.set_string_value(field_id, &pcwstr);
         if descriptor.is_text_field() {
             assert!(res.is_ok());
             assert_eq!(credential.values.read().unwrap()[field_id as usize], value);
         } else {
             assert!(res.is_err());
         }
-        crate::util::com::free_pcwstr(pwstr);
+        crate::util::com::free_pcwstr(pcwstr);
     }
 }
-
-// fn serialize(
-//     &self,
-//     pcpgsr: *mut CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
-//     pcpcs: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-// ) -> windows::core::Result<()> {
 
 #[test]
 fn test_serialization_logon() {

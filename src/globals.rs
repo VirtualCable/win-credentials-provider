@@ -94,12 +94,12 @@ impl Default for BrokerInfo {
     }
 }
 
-pub fn set_broker_info(url: String, verify_ssl: bool) {
+pub fn set_broker_info(url: &str, verify_ssl: bool) {
     BROKER_INFO
         .get_or_init(|| RwLock::new(Some(BrokerInfo::default())))
         .write()
         .unwrap()
-        .replace(BrokerInfo::new(url, verify_ssl));
+        .replace(BrokerInfo::new(url.to_string(), verify_ssl));
 }
 
 pub fn get_broker_info() -> Option<BrokerInfo> {

@@ -15,8 +15,15 @@ pub fn setup_logging(level: &str) {
     #[cfg(test)]
     let target = env_logger::Target::Stderr;
 
+    let level = if let Ok(debug_level) = std::env::var("UDSCP_DEBUG") {
+        log::info!("RUST_LOG is set, using its value instead of the provided level");
+        debug_level
+    } else {
+        level.to_string()
+    };
+
     // If already initialized, do not fail
-    if env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(level))
+    if env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&level))
         .format_timestamp(Some(env_logger::TimestampPrecision::Millis))
         .format_module_path(false)
         .format_target(true)

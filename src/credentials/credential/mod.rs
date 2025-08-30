@@ -249,7 +249,7 @@ impl UDSCredential {
 
     fn set_string_value(&self, field_id: u32, psz: &PCWSTR) -> windows::core::Result<()> {
         debug_dev!(
-            "SetStringValue called for field ID: {}; {:?}",
+            "set_string_value called for field ID: {}; {:?}",
             field_id,
             psz
         );

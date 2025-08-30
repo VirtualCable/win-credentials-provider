@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 use super::*;
 
-use crate::util::{com::ComInitializer, logger::setup_logging, lsa::LsaUnicodeString};
+use crate::util::{com::ComInitializer, logger::setup_logging, lsa::LsaUnicodeString, traits::To};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
@@ -225,7 +225,18 @@ fn get_credential_serialization(
 fn test_unserialize_ok() -> Result<()> {
     // Ensure broker info is None, so no request is done.
     // Wil generate a log of the failure, but no problem, it's fine
-    crate::globals::reset_broker_info();
+    let mut server = mockito::Server::new();
+
+    let _mock = server
+        .mock("POST", "/credential")
+        .with_status(200)
+        .with_header("Content-Type", "application/json")
+        .with_body(r#"{"username":"test_user","password":"test_pass","domain":"test_domain"}"#)
+        .create();
+
+    let url = server.url() + "/credential";
+    globals::set_broker_info(&url, true);
+
     let provider = create_provider("008");
     let username = generate_broker_username();
     let cred_serial = get_credential_serialization(
@@ -323,5 +334,53 @@ fn test_register_get_unregister_event_manager() -> Result<()> {
     assert!(provider.cookie.read().unwrap().is_none());
     assert!(*provider.up_advise_context.read().unwrap() == 0);
 
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_number_of_fields() -> Result<()> {
+    let provider = create_provider("008");
+    assert_eq!(
+        provider.get_number_of_fields(),
+        crate::credentials::types::UdsFieldId::NumFields as u32
+    );
+
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_get_field_descriptor_at() -> Result<()> {
+    let provider = create_provider("008");
+    for i in 0..provider.get_number_of_fields() {
+        let field_descriptor = provider.get_field_descriptor_at(i);
+        match field_descriptor {
+            Ok(desc) => {
+                let orig =
+                    &crate::credentials::fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[i as usize];
+                unsafe {
+                    assert_eq!((*desc).dwFieldID, orig.field_id);
+                    assert_eq!((*desc).cpft, orig.field_type);
+                    assert_eq!((*desc).guidFieldType, orig.guid);
+                    let label = crate::util::com::pcwstr_to_string((*desc).pszLabel.to());
+                    assert_eq!(label, orig.label);
+                }
+                crate::util::com::alloc_free(desc as *mut _);
+            }
+            Err(e) => {
+                debug_dev!("Failed to get field descriptor at index {}: {}", i, e);
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_get_credential_count() -> Result<()> {
+    let provider = create_provider("008");
+    assert_eq!(provider.get_credential_count(), 1);
     Ok(())
 }

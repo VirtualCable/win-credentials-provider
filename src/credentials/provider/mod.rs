@@ -179,6 +179,7 @@ impl UDSCredentialsProvider {
                 }
                 Err(e) => {
                     error!("Failed to get credentials from broker: {:?}", e);
+                    return Err(E_INVALIDARG.into());
                 }
             };
 
@@ -222,7 +223,7 @@ impl UDSCredentialsProvider {
         }
     }
 
-    fn number_of_fields(&self) -> u32 {
+    fn get_number_of_fields(&self) -> u32 {
         crate::credentials::types::UdsFieldId::NumFields as u32
     }
 
@@ -230,7 +231,7 @@ impl UDSCredentialsProvider {
         &self,
         index: u32,
     ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
-        if index >= self.number_of_fields() {
+        if index >= self.get_number_of_fields() {
             return Err(windows::core::Error::from_hresult(E_INVALIDARG));
         }
         crate::credentials::fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[index as usize]
@@ -330,7 +331,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     }
 
     fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
-        Ok(self.number_of_fields())
+        Ok(self.get_number_of_fields())
     }
 
     fn GetFieldDescriptorAt(

@@ -100,6 +100,10 @@ pub fn sec_attrs_for_sid(sid: PSID) -> Result<SecurityAttributes> {
 }
 
 pub fn is_rdp_session() -> bool {
+    // If environment variable "UDSCP_FORCE_RDP" is set, treat as RDP session
+    if let Ok(value) = std::env::var("UDSCP_FORCE_RDP") {
+        return value == "1";
+    }
     unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
 }
 

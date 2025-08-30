@@ -35,9 +35,13 @@ pub fn alloc_pwstr(s: &str) -> Result<PWSTR, AllocPwstrError> {
 }
 
 pub fn free_pcwstr(pcwstr: PCWSTR) {
+   alloc_free(pcwstr.0 as *mut std::ffi::c_void);
+}
+
+pub fn alloc_free<T>(ptr: *mut T) {
     unsafe {
-        if !pcwstr.is_null() {
-            CoTaskMemFree(Some(pcwstr.0 as _));
+        if !ptr.is_null() {
+            CoTaskMemFree(Some(ptr as _));
         }
     }
 }

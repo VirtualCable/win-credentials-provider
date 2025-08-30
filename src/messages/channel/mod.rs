@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use log::error;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{GetLastError, HANDLE, INVALID_HANDLE_VALUE};
 use windows::Win32::Storage::FileSystem::*;
@@ -40,8 +40,8 @@ impl AuthRequest {
 pub struct ChannelServer {
     pipe_handle: SafeHandle,
     stop_flag: Arc<AtomicBool>,
-    request: Arc<Mutex<Option<AuthRequest>>>,
-    no_data_since: Arc<Mutex<Option<Instant>>>,
+    request: Arc<RwLock<Option<AuthRequest>>>,
+    no_data_since: Arc<RwLock<Option<Instant>>>,
 }
 
 #[allow(dead_code)]
@@ -50,8 +50,8 @@ impl ChannelServer {
         Self {
             pipe_handle: SafeHandle::new(INVALID_HANDLE_VALUE),
             stop_flag: Arc::new(AtomicBool::new(true)),
-            request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            no_data_since: Arc::new(Mutex::new(None)),
+            request: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            no_data_since: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -64,8 +64,8 @@ impl ChannelServer {
     }
 
     pub fn get_request(&self) -> Option<AuthRequest> {
-        let mut request: std::sync::MutexGuard<'_, Option<AuthRequest>> = self.request.lock().unwrap();
-        request.take() // Take the request, leaving None in the mutex
+        let mut request_guard = self.request.write().unwrap();
+        request_guard.take() // Take the request, leaving None in the mutex
     }
 
     pub fn run_with_pipe(
@@ -152,8 +152,8 @@ impl ChannelServer {
         Ok(Self {
             pipe_handle: SafeHandle::new(handle), // We will take care of releasing it on drop
             stop_flag: Arc::new(AtomicBool::new(false)),
-            request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            no_data_since: Arc::new(Mutex::new(None)),
+            request: std::sync::Arc::new(std::sync::RwLock::new(None)),
+            no_data_since: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -177,25 +177,25 @@ impl ChannelServer {
                 if read != 4 {
                     return Err(anyhow::anyhow!("Failed to read message length"));
                 }
-                self.no_data_since.lock().unwrap().take(); // Clear no_data_since on successful read
+                self.no_data_since.write().unwrap().take(); // Clear no_data_since on successful read
             }
             Err(e) => {
                 let code = (e.code().0 as u32) & 0xFFFF;
                 if code == 232 {
                     // ERROR_NO_DATA (232) --> No data to read, but client connected
-                    let mut no_data = self.no_data_since.lock().unwrap();
+                    let mut no_data_guard = self.no_data_since.write().unwrap();
                     let now = std::time::Instant::now();
-                    match *no_data {
+                    match *no_data_guard {
                         Some(start) if now.duration_since(start) > Duration::from_secs(1) => {
                             // Set data to None again
-                            *no_data = None;
+                            *no_data_guard = None;
                             error!("No data read for more than 1 second, disconnecting pipe");
                             return Err(anyhow::anyhow!(
                                 "No data read for more than 1 second, disconnecting pipe"
                             ));
                         }
                         None => {
-                            *no_data = Some(now);
+                            *no_data_guard = Some(now);
                             debug_dev!("No data read, setting no_data_since to {:?}", now);
                         }
                         _ => {
@@ -289,7 +289,7 @@ impl ChannelServer {
         }
 
         // Store so it can be processed later
-        self.request.lock().unwrap().replace(msg);
+        self.request.write().unwrap().replace(msg);
     }
 
     fn disconnect_pipe(&self) {

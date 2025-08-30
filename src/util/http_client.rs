@@ -69,9 +69,9 @@ impl HttpRequestClient {
     }
 
     #[must_use]
-    pub fn with_ignore_ssl(self) -> Self {
+    pub fn with_verify_ssl(self, verify: bool) -> Self {
         Self {
-            verify_ssl: false,
+            verify_ssl: verify,
             ..self
         }
     }

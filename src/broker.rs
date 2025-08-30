@@ -21,9 +21,9 @@ pub fn get_credentials_from_broker(
     let broker_info = globals::get_broker_info();
 
     match broker_info {
-        Some(_info) => {
+        Some(info) => {
             #[cfg(test)] // Only for testing will allow this
-            if _info.url().is_empty() {
+            if info.url().is_empty() {
                 let username = token;
                 let password = shared_secret;
                 let domain = scrambler;
@@ -35,14 +35,15 @@ pub fn get_credentials_from_broker(
                 ));
             }
 
-            let client = HttpRequestClient::new();
+            let client = HttpRequestClient::new().with_verify_ssl(info.verify_ssl());
 
             let _json_body = serde_json::json!({
                 "token": token,
                 "shared_secret": shared_secret,
                 "scrambler": scrambler,
             });
-            match client.post_json::<serde_json::Value, serde_json::Value>("", &_json_body) {
+            match client.post_json::<serde_json::Value, serde_json::Value>(info.url(), &_json_body)
+            {
                 Ok(response) => {
                     let username = response
                         .get("username")

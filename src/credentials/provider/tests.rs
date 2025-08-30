@@ -466,3 +466,19 @@ fn test_get_credential_count_no_rdp() -> Result<()> {
     unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
+
+#[test]
+#[serial_test::serial(broker_info)]
+fn test_get_credential_at_ok() {
+    let provider = create_provider();
+    let result = provider.get_credential_at(0);
+    assert!(result.is_ok());
+}
+
+#[test]
+#[serial_test::serial(broker_info)]
+fn test_get_credential_at_err() {
+    let provider = create_provider();
+    let result = provider.get_credential_at(1);
+    assert!(result.is_err());
+}

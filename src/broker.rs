@@ -8,17 +8,36 @@ pub const BROKER_CREDENTIAL_PREFIX: &str = "uds:"; // Broker credential prefix
 pub const BROKER_CREDENTIAL_SIZE: usize = 48; // Broker credential size
 
 /// Returns true if the credential is for the broker
-pub fn is_broker_credential(username: &str) -> bool {
-    username.starts_with(BROKER_CREDENTIAL_PREFIX) && username.len() == BROKER_CREDENTIAL_SIZE
+pub fn is_broker_credential(token: &str, scrambler: &str) -> bool {
+    token.starts_with(BROKER_CREDENTIAL_PREFIX)
+        && token.len() == BROKER_CREDENTIAL_SIZE
+        && scrambler.len() == BROKER_CREDENTIAL_SIZE
 }
 
 /// Obtains the Username, password, and domain from broker with provided data
 pub fn get_credentials_from_broker(
     token: &str,
-    shared_secret: &str,
-    scrambler: &str,
+    _scrambler: &str,
+    _not_used: &str,
 ) -> Result<(String, String, String)> {
     let broker_info = globals::get_broker_info();
+
+    // Allow us to set an environment var to return fixed creds
+    // when debugging. Contains username:password:domain
+    #[cfg(debug_assertions)]
+    {
+        use log::error;
+        let debug_data = std::env::var("UDSCP_FAKE_CREDENTIALS").unwrap_or_default();
+        let parts: Vec<&str> = debug_data.split(':').collect();
+        if parts.len() == 3 {
+            return Ok((
+                parts[0].to_string(),
+                parts[1].to_string(),
+                parts[2].to_string(),
+            ));
+        }
+        error!("Invalid UDSCP_FAKE_CREDENTIALS format");
+    }
 
     match broker_info {
         Some(info) => {
@@ -30,8 +49,6 @@ pub fn get_credentials_from_broker(
 
             let _json_body = serde_json::json!({
                 "token": token,
-                "shared_secret": shared_secret,
-                "scrambler": scrambler,
             });
             match client.post_json::<serde_json::Value, serde_json::Value>(info.url(), &_json_body)
             {
@@ -77,10 +94,14 @@ mod tests {
     fn test_is_broker_credential() {
         logger::setup_logging("debug");
         assert!(is_broker_credential(
-            "uds:12345678901234567890123456789012345678901234"
+            "uds:12345678901234567890123456789012345678901234",
+            "123456789012345678901234567890123456789012345678"
         ));
-        assert!(!is_broker_credential("uds:short"));
-        assert!(!is_broker_credential("not_a_broker_credential"));
+        assert!(!is_broker_credential("uds:short", "uds:short"));
+        assert!(!is_broker_credential(
+            "not_a_broker_credential",
+            "not_a_broker_credential"
+        ));
     }
 
     #[test]

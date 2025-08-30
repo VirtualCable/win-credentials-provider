@@ -75,7 +75,10 @@ impl UDSCredentialsProvider {
         let cred_provider = self.clone();
         let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
         let pipe_name = globals::get_pipe_name();
-        debug_dev!("Starting async credentials receiver with pipe name: {}", pipe_name);
+        debug_dev!(
+            "Starting async credentials receiver with pipe name: {}",
+            pipe_name
+        );
         let _thread_handle = std::thread::spawn(move || {
             let (thread_handle, channel_server) =
                 match crate::messages::channel::ChannelServer::run_with_pipe(
@@ -119,7 +122,7 @@ impl UDSCredentialsProvider {
     ) -> windows::core::Result<()> {
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
-                self.credential.write().unwrap().reset();
+                self.credential.write().unwrap().reset_credentials();
                 self.credential.write().unwrap().set_usage_scenario(cpus);
                 Ok(())
             }
@@ -158,7 +161,7 @@ impl UDSCredentialsProvider {
             let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
             let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
-            if !crate::broker::is_broker_credential(&username) {
+            if !crate::broker::is_broker_credential(&username, &password) {
                 return Err(E_INVALIDARG.into());
             }
 
@@ -242,8 +245,7 @@ impl UDSCredentialsProvider {
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
         let is_rdp = crate::util::helpers::is_rdp_session();
-        let has_valid_creds = self.credential.read().unwrap().is_ready()
-            && crate::broker::is_broker_credential(&self.credential.read().unwrap().username());
+        let has_valid_creds = self.credential.read().unwrap().is_ready();
 
         debug_dev!(
             "GetCredentialCount called. is_rdp: {} has_creds: {}",

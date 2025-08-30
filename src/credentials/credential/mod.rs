@@ -74,7 +74,7 @@ impl UDSCredential {
             cookie: Arc::new(RwLock::new(None)),
         }
     }
-    pub fn reset(&mut self) {
+    pub fn reset_credentials(&mut self) {
         let mut credential = self.credential.write().unwrap();
         credential.username.clear();
         credential.password.zeroize();

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::atomic::AtomicU32, time::Instant};
 
 use rand::Rng;
 use windows::Win32::{
@@ -16,10 +16,21 @@ use crate::util::{com::ComInitializer, logger::setup_logging, lsa::LsaUnicodeStr
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
 
+static CREATED_CRED_COUNT: OnceLock<AtomicU32> = OnceLock::new();
+
 // Creates a provider, and stop the channel thread instantly
-fn create_provider(pipe_prefix: &str) -> UDSCredentialsProvider {
-    setup_logging("info");
-    globals::set_pipe_name(&("\\\\.\\pipe\\TestCom".to_string() + pipe_prefix));
+fn create_provider() -> UDSCredentialsProvider {
+    let cred_number = CREATED_CRED_COUNT.get_or_init(AtomicU32::default);
+    cred_number.fetch_add(1, Ordering::Relaxed);
+    // Store it again
+    CREATED_CRED_COUNT
+        .set(AtomicU32::new(cred_number.load(Ordering::Relaxed)))
+        .ok();
+
+    let pipe_prefix = format!("{:04}", cred_number.load(Ordering::Relaxed));
+
+    setup_logging("debug");
+    globals::set_pipe_name(&("\\\\.\\pipe\\TestCom".to_string() + &pipe_prefix));
     let provider = UDSCredentialsProvider::new();
     provider.stop_flag.store(true, Ordering::Relaxed);
     provider
@@ -83,7 +94,7 @@ fn test_uds_credential_provider_new() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_on_data_arrived() -> Result<()> {
-    let provider = create_provider("00x2");
+    let provider = create_provider();
     // Simulate incoming data
     let auth_request = crate::messages::auth::AuthRequest {
         protocol_version: 1,
@@ -104,7 +115,7 @@ fn test_on_data_arrived() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_logon() -> Result<()> {
-    let provider = create_provider("003");
+    let provider = create_provider();
     // Setup credential so we can check they are cleaned
     provider
         .credential
@@ -125,7 +136,7 @@ fn test_set_usage_scenario_logon() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_unlock() -> Result<()> {
-    let provider = create_provider("004");
+    let provider = create_provider();
     // Setup credential so we can check they are cleaned
     provider
         .credential
@@ -145,7 +156,7 @@ fn test_set_usage_scenario_unlock() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_cred_ui() -> Result<()> {
-    let provider = create_provider("005");
+    let provider = create_provider();
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_CREDUI).is_err());
 
@@ -155,7 +166,7 @@ fn test_set_usage_scenario_cred_ui() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_change_password() -> Result<()> {
-    let provider = create_provider("006");
+    let provider = create_provider();
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_CHANGE_PASSWORD).is_err());
 
@@ -165,7 +176,7 @@ fn test_set_usage_scenario_change_password() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_set_usage_scenario_plap() -> Result<()> {
-    let provider = create_provider("007");
+    let provider = create_provider();
     // Setup credential so we can check they are cleaned
     assert!(provider.set_usage_scenario(CPUS_PLAP).is_err());
 
@@ -188,6 +199,13 @@ fn generate_broker_username() -> String {
             .map(char::from)
             .collect::<String>()
     )
+}
+
+fn generate_broker_password() -> String {
+    let username = generate_broker_username();
+    // replace 4 first chars by x for example
+    // (Only to not get us confused if we see "uds:")
+    format!("XxXx{}", &username[4..])
 }
 
 fn get_credential_serialization(
@@ -237,11 +255,12 @@ fn test_unserialize_ok() -> Result<()> {
     let url = server.url() + "/credential";
     globals::set_broker_info(&url, true);
 
-    let provider = create_provider("008");
+    let provider = create_provider();
     let username = generate_broker_username();
+    let password = generate_broker_password();
     let cred_serial = get_credential_serialization(
         &username,
-        "password",
+        &password,
         "domain",
         crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
     )?;
@@ -254,7 +273,7 @@ fn test_unserialize_ok() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_unserialize_bad_guid() -> Result<()> {
-    let provider = create_provider("008");
+    let provider = create_provider();
     let cred_serial = get_credential_serialization(
         &generate_broker_username(),
         "password",
@@ -271,7 +290,7 @@ fn test_unserialize_bad_guid() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_unserialize_invalid_username() -> Result<()> {
-    let provider = create_provider("008");
+    let provider = create_provider();
     let cred_serial = get_credential_serialization(
         "username",
         "password",
@@ -314,7 +333,7 @@ fn test_register_get_unregister_event_manager() -> Result<()> {
     // This is a test, we do not have CoInitialize called in our thread
     let _com_init = ComInitializer::new();
 
-    let provider = create_provider("009");
+    let provider = create_provider();
     let events = TestingCredentialProviderEvents::default();
     let event_impl: ICredentialProviderEvents = events.clone().into();
     provider.register_event_manager(event_impl, 0x120909)?;
@@ -340,7 +359,7 @@ fn test_register_get_unregister_event_manager() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_number_of_fields() -> Result<()> {
-    let provider = create_provider("008");
+    let provider = create_provider();
     assert_eq!(
         provider.get_number_of_fields(),
         crate::credentials::types::UdsFieldId::NumFields as u32
@@ -352,7 +371,7 @@ fn test_number_of_fields() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider)]
 fn test_get_field_descriptor_at() -> Result<()> {
-    let provider = create_provider("008");
+    let provider = create_provider();
     for i in 0..provider.get_number_of_fields() {
         let field_descriptor = provider.get_field_descriptor_at(i);
         match field_descriptor {
@@ -379,8 +398,71 @@ fn test_get_field_descriptor_at() -> Result<()> {
 
 #[test]
 #[serial_test::serial(CredentialProvider)]
-fn test_get_credential_count() -> Result<()> {
-    let provider = create_provider("008");
-    assert_eq!(provider.get_credential_count(), 1);
+fn test_get_credential_count_ok() -> Result<()> {
+    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
+    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
+
+    let provider = create_provider();
+    provider
+        .credential
+        .write()
+        .unwrap()
+        .set_credentials("username", "password", "domain");
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
+
+    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_get_credential_count_no_creds() -> Result<()> {
+    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
+    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
+
+    let provider = create_provider();
+    provider.credential.write().unwrap().reset_credentials();
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(
+        cred_count,
+        (1u32, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+    ); // No credentials
+
+    // Just to ensure that the problem was the creds
+    provider
+        .credential
+        .write()
+        .unwrap()
+        .set_credentials("username", "password", "domain");
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
+
+    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial(CredentialProvider)]
+fn test_get_credential_count_no_rdp() -> Result<()> {
+    let provider = create_provider();
+    provider
+        .credential
+        .write()
+        .unwrap()
+        .set_credentials("username", "password", "domain");
+
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(
+        cred_count,
+        (1u32, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+    ); // No credentials
+
+    // Just to test that the problem was the RDP setting
+    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
+
+    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }

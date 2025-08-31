@@ -36,9 +36,18 @@ fn create_provider() -> UDSCredentialsProvider {
     provider
 }
 
-fn create_provider_with_channel(pipe_prefix: &str) -> UDSCredentialsProvider {
+fn create_provider_with_channel() -> UDSCredentialsProvider {
     setup_logging("info");
-    globals::set_pipe_name(&("\\\\.\\pipe\\TestComCh".to_string() + pipe_prefix));
+    let cred_number = CREATED_CRED_COUNT.get_or_init(AtomicU32::default);
+    cred_number.fetch_add(1, Ordering::Relaxed);
+    // Store it again
+    CREATED_CRED_COUNT
+        .set(AtomicU32::new(cred_number.load(Ordering::Relaxed)))
+        .ok();
+
+    let pipe_prefix = format!("{:04}", cred_number.load(Ordering::Relaxed));
+
+    globals::set_pipe_name(&("\\\\.\\pipe\\TestCom".to_string() + &pipe_prefix));
     UDSCredentialsProvider::new()
 }
 
@@ -48,7 +57,7 @@ fn test_uds_credential_provider_new() -> Result<()> {
     // Wait a bit to ensure previous test closed the pipe
     // In fact, rest of tasks, even with the thead creation "failed"
     // Is not problematic, because they are designed so
-    let provider = create_provider_with_channel("001");
+    let provider = create_provider_with_channel();
     std::thread::sleep(std::time::Duration::from_millis(222));
     // Should have the ASYNC_CREDS_HANDLE sent with a handle
     assert!(ASYNC_CREDS_HANDLE.get().is_some());

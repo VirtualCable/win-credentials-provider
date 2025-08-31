@@ -20,7 +20,11 @@ use windows::{
 
 use zeroize::Zeroize;
 
-use crate::{credentials::credential::UDSCredential, debug_flow, utils::{log::error, lsa}};
+use crate::{
+    credentials::credential::UDSCredential,
+    debug_flow,
+    utils::{log, log::error, lsa},
+};
 use crate::{debug_dev, globals};
 
 // Only available in tests
@@ -41,6 +45,9 @@ pub struct UDSCredentialsProvider {
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {
+        // Ensure flow counter is reset on debug
+        log::reset_flow_counter();
+
         debug_flow!("UDSCredentialsProvider::new");
         let me: UDSCredentialsProvider = Self {
             credential: Arc::new(RwLock::new(UDSCredential::new())),
@@ -248,7 +255,7 @@ impl UDSCredentialsProvider {
         let has_valid_creds = self.credential.read().unwrap().is_ready();
 
         debug_dev!(
-            "GetCredentialCount called. is_rdp: {} has_creds: {}",
+            "get_credential_count called. is_rdp: {} has_creds: {}",
             is_rdp,
             has_valid_creds
         );

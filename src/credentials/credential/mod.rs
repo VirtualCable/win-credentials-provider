@@ -25,11 +25,13 @@ use windows::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    debug_dev, debug_flow, globals::{self, CLSID_UDS_CREDENTIAL_PROVIDER}, utils::{
+    debug_dev, debug_flow,
+    globals::{self, CLSID_UDS_CREDENTIAL_PROVIDER},
+    utils::{
         com,
         log::{debug, error, info, warn},
         lsa,
-    }
+    },
 };
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
@@ -342,6 +344,12 @@ impl UDSCredential {
                 } else {
                     (String::new(), String::new())
                 };
+
+            let values_domain = if values_domain.is_empty() {
+                crate::utils::helpers::get_computer_name()
+            } else {
+                values_domain
+            };
 
             let values_password = if values_username.is_empty() && !values_password.is_empty() {
                 warn!("Username is empty but password is set, ignoring password");

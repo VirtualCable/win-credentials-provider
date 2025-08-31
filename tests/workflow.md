@@ -13,12 +13,14 @@ This document has been created using search information and AI provided informat
 | 4 | LogonUI → CP | **GetFieldDescriptorAt(index)** | Retrieve each field’s description (type, label, GUID). Repeated per field. |
 | 5 | LogonUI → CP | **GetCredentialCount(&count, &default, &autoLogon)** | Ask how many credentials are available and which is default. |
 | 6 | LogonUI → CP | **GetCredentialAt(index)** | Retrieve the `ICredentialProviderCredential` object for each tile. |
-| 7 | LogonUI → Credential | **GetFieldState(...)**, **GetStringValue(...)**, **GetBitmapValue(...)**, etc. | Populate the tile UI by querying the credential object. |
-| 8 | User interaction | **SetStringValue(...)**, **CommandLinkClicked(...)** | Notify the provider of edits or actions taken by the user. |
-| 9 | User submits | **GetSerialization(...)** on selected credential | Package credentials into `CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION` for LSA or Winlogon. |
-| 10 | Optional LogonUI → CP | **SetSerialization(...)** | Provide pre-serialized credentials to the provider, e.g., RDP reconnect. |
-| 11 | LogonUI → CP | **UnAdvise()** | Cleanup when LogonUI no longer needs notifications. |
-| 12 | COM | Object release | CP and credential objects are released and the lifecycle ends. |
+| 7 | LogonUI → Credential | **Advise(...)** | Provide the event interface so the credential can notify dynamic changes. |
+| 8 | LogonUI → Credential | **GetFieldState(...)**, **GetStringValue(...)**, **GetBitmapValue(...)**, etc. | Populate the tile UI by querying the credential object. |
+| 9 | User interaction (Credential) | **SetStringValue(...)**, **CommandLinkClicked(...)** | Notify the credential of edits or actions taken by the user. |
+| 10 | User submits (Credential) | **GetSerialization(...)** on selected credential | Package credentials into `CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION` for LSA or Winlogon. |
+| 11 | LogonUI → Credential | **UnAdvise()** | Cleanup when LogonUI no longer needs notifications. |
+| 12 | Optional LogonUI → CP | **SetSerialization(...)** | Provide pre-serialized credentials to the provider, e.g., RDP reconnect. |
+| 13 | LogonUI → CP | **UnAdvise()** | Cleanup when LogonUI no longer needs notifications. |
+| 14 | COM | Object release | CP and credential objects are released and the lifecycle ends. |
 
 ---
 

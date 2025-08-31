@@ -49,7 +49,7 @@ pub extern "system" fn DllGetClassObject(
     riid: *const GUID,
     ppv: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    util::logger::setup_logging("info");
+    utils::logger::setup_logging("info");
     unsafe {
         if *rclsid != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
@@ -68,4 +68,4 @@ pub mod credentials;
 pub mod globals;
 pub mod messages;
 pub mod broker;
-pub mod util;
+pub mod utils;

@@ -2,7 +2,7 @@ use log::warn;
 use windows::Win32::Foundation::E_FAIL;
 use windows_core::Result;
 
-use crate::{globals, util::http_client::HttpRequestClient};
+use crate::{globals, utils::http_client::HttpRequestClient};
 
 pub const BROKER_CREDENTIAL_PREFIX: &str = "uds:"; // Broker credential prefix
 pub const BROKER_CREDENTIAL_SIZE: usize = 48; // Broker credential size
@@ -88,7 +88,7 @@ pub fn get_credentials_from_broker(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{debug_dev, util::logger};
+    use crate::{debug_dev, utils::logger};
 
     #[test]
     fn test_is_broker_credential() {

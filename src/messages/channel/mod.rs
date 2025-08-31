@@ -12,7 +12,7 @@ use windows::core::PCWSTR;
 use crate::debug_dev;
 
 use crate::messages::{auth::AuthRequest, consts};
-use crate::util::safe::SafeHandle;
+use crate::utils::safe::SafeHandle;
 
 impl AuthRequest {
     pub fn validate(&self) -> Result<()> {

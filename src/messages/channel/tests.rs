@@ -6,7 +6,7 @@ use prost::Message;
 use rand::{Rng, distr};
 use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
 
-use crate::{messages::auth::*, util::logger::setup_logging};
+use crate::{messages::auth::*, utils::logger::setup_logging};
 
 #[test]
 fn test_create_destroy_create() {

@@ -51,18 +51,16 @@ impl IClassFactory_Impl for ClassFactory_Impl {
             match *riid {
                 ICredentialProvider::IID => {
                     let provider: ICredentialProvider = UDSCredentialsProvider::new().into();
-                    *ppvobject = std::mem::transmute::<ICredentialProvider, *mut core::ffi::c_void>(
-                        provider,
-                    );
+                    // into_raw of Interface copies and transmutes the object, forgetting drop.
+                    // So we transfer the property of hte object, that is on the Heap, to COM
+                    *ppvobject = provider.into_raw();
                     Ok(())
                 }
                 ICredentialProviderFilter::IID => {
                     let filter: ICredentialProviderFilter = UDSCredentialsFilter::new().into();
-                    // `transmute()` is needed to return the real object
-                    *ppvobject = std::mem::transmute::<
-                        ICredentialProviderFilter,
-                        *mut core::ffi::c_void,
-                    >(filter);
+                    // into_raw of Interface copies and transmutes the object, forgetting drop.
+                    // So we transfer the property of the object, that is on the Heap, to COM
+                    *ppvobject = filter.into_raw();
                     Ok(())
                 }
                 _ => Err(E_NOINTERFACE.into()),

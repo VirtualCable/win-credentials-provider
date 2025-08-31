@@ -407,7 +407,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    use crate::util::logger::setup_logging;
+    use crate::utils::logger::setup_logging;
 
     // Test GET without proxy
     #[test]

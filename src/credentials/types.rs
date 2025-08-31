@@ -58,6 +58,15 @@ impl CredentialFieldDescriptor {
         self.field_type == windows::Win32::UI::Shell::CPFT_EDIT_TEXT
             || self.field_type == windows::Win32::UI::Shell::CPFT_PASSWORD_TEXT
     }
+
+    pub fn is_image_field(&self) -> bool {
+        self.field_type == windows::Win32::UI::Shell::CPFT_TILE_IMAGE
+    }
+
+    pub fn is_submit_button(&self) -> bool {
+        self.field_type == windows::Win32::UI::Shell::CPFT_SUBMIT_BUTTON
+    }
+
 }
 
 #[allow(dead_code)]
@@ -73,8 +82,8 @@ pub enum UdsFieldId {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::traits::To;
     use windows::Win32::UI::Shell::{CPFIS_NONE, CPFS_DISPLAY_IN_SELECTED_TILE, CPFT_EDIT_TEXT};
-    use crate::util::traits::To;
 
     use super::*;
 

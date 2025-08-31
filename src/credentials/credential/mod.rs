@@ -29,7 +29,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     debug_dev, globals,
     globals::CLSID_UDS_CREDENTIAL_PROVIDER,
-    util::{com, lsa},
+    utils::{com, lsa},
 };
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
@@ -94,7 +94,7 @@ impl UDSCredential {
         credential.password = Zeroizing::new(temp);
 
         if domain.is_empty() {
-            credential.domain = crate::util::helpers::get_computer_name();
+            credential.domain = crate::utils::helpers::get_computer_name();
         } else {
             credential.domain = domain.to_string();
         }
@@ -241,7 +241,7 @@ impl UDSCredential {
             field_id, value
         );
 
-        match crate::util::com::alloc_pwstr(value) {
+        match crate::utils::com::alloc_pwstr(value) {
             Ok(pwstr) => Ok(pwstr),
             Err(_) => Err(E_INVALIDARG.into()),
         }
@@ -257,7 +257,7 @@ impl UDSCredential {
             let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
             debug_dev!("Field descriptor: {:?}", descriptor);
             if descriptor.is_text_field() {
-                let new_value = crate::util::com::pcwstr_to_string(*psz);
+                let new_value = crate::utils::com::pcwstr_to_string(*psz);
                 debug_dev!("New value: {}", new_value);
                 self.values.write().unwrap()[field_id as usize] = new_value;
                 return Ok(());
@@ -274,7 +274,7 @@ impl UDSCredential {
             unsafe {
                 LoadImageW(
                     Some(globals::get_instance()),
-                    crate::util::helpers::make_int_resource(101),
+                    crate::utils::helpers::make_int_resource(101),
                     IMAGE_BITMAP,
                     0,
                     0,
@@ -282,6 +282,14 @@ impl UDSCredential {
                 )
                 .map(|hbmp_handle| HBITMAP(hbmp_handle.0))
             }
+        } else {
+            Err(E_INVALIDARG.into())
+        }
+    }
+
+    fn get_submit_button_value(&self, field_id: u32) -> windows::core::Result<u32> {
+        if field_id == UdsFieldId::SubmitButton as u32 {
+            Ok(UdsFieldId::Password as u32)
         } else {
             Err(E_INVALIDARG.into())
         }
@@ -417,7 +425,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         if dwfieldid == UdsFieldId::SubmitButton as u32 {
             Ok(UdsFieldId::Password as u32)
         } else {
-            Err(E_INVALIDARG.into())
+            self.get_submit_button_value(dwfieldid)
         }
     }
 

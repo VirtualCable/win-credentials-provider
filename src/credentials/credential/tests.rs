@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::util::{logger::setup_logging, traits::To};
+use crate::utils::{logger::setup_logging, traits::To};
 
 #[test]
 fn test_uds_credential_new() {
@@ -81,7 +81,7 @@ fn test_get_string_value() {
     for field_id in 0..UdsFieldId::NumFields as u32 {
         credential.values.write().unwrap()[field_id as usize] = format!("value{}", field_id);
         let val: PWSTR = credential.get_string_value(field_id).unwrap();
-        let value = crate::util::com::pcwstr_to_string(val.to());
+        let value = crate::utils::com::pcwstr_to_string(val.to());
         assert_eq!(credential.values.read().unwrap()[field_id as usize], value);
     }
 }
@@ -92,7 +92,7 @@ fn test_set_string_value() {
     let credential = UDSCredential::new();
     for field_id in 0..UdsFieldId::NumFields as u32 {
         let value = format!("value{}", field_id);
-        let pcwstr: PCWSTR = crate::util::com::alloc_pwstr(&value).unwrap().to();
+        let pcwstr: PCWSTR = crate::utils::com::alloc_pwstr(&value).unwrap().to();
         let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
         let res = credential.set_string_value(field_id, &pcwstr);
         if descriptor.is_text_field() {
@@ -101,7 +101,7 @@ fn test_set_string_value() {
         } else {
             assert!(res.is_err());
         }
-        crate::util::com::free_pcwstr(pcwstr);
+        crate::utils::com::free_pcwstr(pcwstr);
     }
 }
 
@@ -131,11 +131,11 @@ fn test_serialization_logon() {
     let base = pcpcs.rgbSerialization;
 
     // Deseralize data again and see that all is fine
-    let unserial = unsafe { crate::util::lsa::kerb_interactive_unlock_logon_unpack_in_place(base) };
+    let unserial = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_unpack_in_place(base) };
 
-    let username = crate::util::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
-    let password = crate::util::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
-    let domain = crate::util::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
+    let username = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
+    let password = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
+    let domain = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
 
     assert_eq!(username, "testuser");
     assert_eq!(password, "testpassword");

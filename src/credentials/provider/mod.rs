@@ -21,7 +21,7 @@ use windows::{
 use log::error;
 use zeroize::Zeroize;
 
-use crate::{credentials::credential::UDSCredential, util::lsa};
+use crate::{credentials::credential::UDSCredential, utils::lsa};
 use crate::{debug_dev, globals};
 
 // Only available in tests
@@ -198,7 +198,7 @@ impl UDSCredentialsProvider {
         upadvisecontext: usize,
     ) -> windows::core::Result<()> {
         // Store for using later
-        let cookie = crate::util::com::register_in_git(pcpe)?;
+        let cookie = crate::utils::com::register_in_git(pcpe)?;
         *self.cookie.write().unwrap() = Some(cookie);
         // Context used with ICredentialProviderEvents
         *self.up_advise_context.write().unwrap() = upadvisecontext;
@@ -211,7 +211,7 @@ impl UDSCredentialsProvider {
             *guard
         };
         if let Some(cookie) = cookie_opt {
-            crate::util::com::unregister_from_git(cookie)?;
+            crate::utils::com::unregister_from_git(cookie)?;
             *self.cookie.write().unwrap() = None;
             *self.up_advise_context.write().unwrap() = 0;
         }
@@ -220,7 +220,7 @@ impl UDSCredentialsProvider {
 
     fn get_event_manager(&self) -> windows::core::Result<Option<ICredentialProviderEvents>> {
         if let Some(cookie) = *self.cookie.read().unwrap() {
-            Ok(Some(crate::util::com::get_from_git(cookie)?))
+            Ok(Some(crate::utils::com::get_from_git(cookie)?))
         } else {
             Ok(None)
         }
@@ -244,7 +244,7 @@ impl UDSCredentialsProvider {
     fn get_credential_count(&self) -> windows::core::Result<(u32, u32, BOOL)> {
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
-        let is_rdp = crate::util::helpers::is_rdp_session();
+        let is_rdp = crate::utils::helpers::is_rdp_session();
         let has_valid_creds = self.credential.read().unwrap().is_ready();
 
         debug_dev!(
@@ -292,7 +292,7 @@ impl Drop for UDSCredentialsProvider {
             *guard
         };
         if let Some(cookie) = cookie_opt
-            && let Err(e) = crate::util::com::unregister_from_git(cookie)
+            && let Err(e) = crate::utils::com::unregister_from_git(cookie)
         {
             error!("Failed to unregister from GIT: {:?}", e);
         }

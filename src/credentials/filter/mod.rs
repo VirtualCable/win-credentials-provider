@@ -12,7 +12,7 @@ use windows::{
 
 use crate::{
     debug_dev,
-    util::{helpers, lsa},
+    utils::{helpers, lsa},
 };
 
 #[implement(ICredentialProviderFilter)]

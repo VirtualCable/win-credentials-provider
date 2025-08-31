@@ -18,7 +18,7 @@ impl To<PCWSTR> for PWSTR {
 impl To<String> for PCWSTR {
     /// Converts PCWSTR to String using a utility function.
     fn to(&self) -> String {
-        crate::util::com::pcwstr_to_string(*self)
+        crate::utils::com::pcwstr_to_string(*self)
     }
 }
 
@@ -26,6 +26,6 @@ impl To<String> for PCWSTR {
 impl To<String> for PWSTR {
     /// Converts PWSTR to String by first converting to PCWSTR, then to String.
     fn to(&self) -> String {
-        crate::util::com::pcwstr_to_string(self.to())
+        crate::utils::com::pcwstr_to_string(self.to())
     }
 }

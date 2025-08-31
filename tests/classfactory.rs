@@ -3,14 +3,15 @@
 
 mod utils;
 
-use windows::{core::*, Win32::UI::Shell::{ICredentialProviderCredential}};
+use windows::{core::*, Win32::UI::Shell::{ICredentialProviderCredential, CPUS_LOGON}};
 
 #[test]
 fn test_class_factory_instantiates_provider() -> windows::core::Result<()> {
     let factory = utils::com::ClassFactoryTest::new()?;
-    let _provider = factory.create_provider()?;
+    let provider = factory.create_provider()?;
 
-    // unsafe { _provider.SetUsageScenario(CPUS_LOGON, 0) }?;
+    // Should work correctly if the class was correctly created..
+    unsafe { provider.SetUsageScenario(CPUS_LOGON, 0) }?;
 
     Ok(())
 }

@@ -1,8 +1,11 @@
-use log::warn;
 use windows::Win32::Foundation::E_FAIL;
 use windows_core::Result;
 
-use crate::{globals, utils::http_client::HttpRequestClient};
+use crate::{
+    globals,
+    utils::http_client::HttpRequestClient,
+    utils::log::{error, warn},
+};
 
 pub const BROKER_CREDENTIAL_PREFIX: &str = "uds:"; // Broker credential prefix
 pub const BROKER_CREDENTIAL_SIZE: usize = 48; // Broker credential size
@@ -26,7 +29,6 @@ pub fn get_credentials_from_broker(
     // when debugging. Contains username:password:domain
     #[cfg(debug_assertions)]
     {
-        use log::error;
         let debug_data = std::env::var("UDSCP_FAKE_CREDENTIALS").unwrap_or_default();
         let parts: Vec<&str> = debug_data.split(':').collect();
         if parts.len() == 3 {
@@ -88,11 +90,11 @@ pub fn get_credentials_from_broker(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{debug_dev, utils::logger};
+    use crate::{debug_dev, utils::log};
 
     #[test]
     fn test_is_broker_credential() {
-        logger::setup_logging("debug");
+        log::setup_logging("debug");
         assert!(is_broker_credential(
             "uds:12345678901234567890123456789012345678901234",
             "123456789012345678901234567890123456789012345678"
@@ -107,7 +109,7 @@ mod tests {
     #[test]
     #[serial_test::serial(broker_info)]
     fn test_get_credentials_from_broker_valid_info() {
-        logger::setup_logging("debug");
+        log::setup_logging("debug");
         let mut server = mockito::Server::new();
 
         let mock = server
@@ -150,7 +152,7 @@ mod tests {
     #[test]
     #[serial_test::serial(broker_info)]
     fn test_get_credentials_from_broker_no_info() {
-        logger::setup_logging("debug");
+        log::setup_logging("debug");
         globals::set_broker_info("", false);
         let result = get_credentials_from_broker("token", "shared_secret", "scrambler");
         assert!(result.is_err());

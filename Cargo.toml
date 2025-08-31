@@ -47,13 +47,16 @@ anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
-log = "0.4.27"
-env_logger = "0.11.8"
 # For Protocol Buffers
 prost = "0.14.1"
 prost-types = "0.14.1"
 # Zeroize, for securing data
 zeroize = "1.8.1"
+
+# Logging
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing-log = "0.2.0"
 
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.

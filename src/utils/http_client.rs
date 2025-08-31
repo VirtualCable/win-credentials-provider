@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
-use log::{debug, error};
 use std::{collections::HashMap, os::raw::c_void};
 use windows::{
     Win32::{Foundation::*, Networking::WinHttp::*},
     core::*,
 };
+
+use crate::utils::log::{debug, error};
 
 #[derive(Debug)]
 pub struct WinHttpHandle {
@@ -407,7 +408,7 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    use crate::utils::logger::setup_logging;
+    use crate::utils::log::setup_logging;
 
     // Test GET without proxy
     #[test]

@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::utils::logger::setup_logging;
+use crate::utils::log::setup_logging;
 
 use windows::Win32::Security::Authentication::Identity::{
     KERB_INTERACTIVE_LOGON, KerbInteractiveLogon,

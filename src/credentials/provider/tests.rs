@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 use super::*;
 
-use crate::utils::{com::ComInitializer, logger::setup_logging, lsa::LsaUnicodeString, traits::To};
+use crate::utils::{com::ComInitializer, log::setup_logging, lsa::LsaUnicodeString, traits::To};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them

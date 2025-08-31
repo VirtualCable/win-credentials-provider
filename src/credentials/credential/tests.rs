@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::utils::{logger::setup_logging, traits::To};
+use crate::utils::{log::setup_logging, traits::To};
 
 #[test]
 fn test_uds_credential_new() {

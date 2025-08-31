@@ -1,6 +1,7 @@
 ### Notes
 
-This document has been created using search information and AI provided information..
+This document has been created using search engines information and AI provided information... 
+May be not entirely accurate, but it is a best effort to provide useful information.
 
 
 # Credential provider call sequence
@@ -45,9 +46,11 @@ When the Remote Desktop client sends valid, pre‑serialized credentials that ma
 | 5 | LogonUI → CP | **GetFieldDescriptorAt(index)** | Retrieve field metadata (optional in this path; sometimes skipped). |
 | 6 | LogonUI → CP | **GetCredentialCount(&count, &default, &autoLogon)** | Usually returns `count = 1`, `default = 0`, `autoLogon = TRUE` to trigger immediate logon. |
 | 7 | LogonUI → CP | **GetCredentialAt(0)** | Return the credential object pre‑populated from `SetSerialization`. |
-| 8 | LogonUI → Credential | **GetSerialization(...)** | Package the credential into a `CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION` for LSA/Winlogon (often just re‑emits what was passed in). |
-| 9 | LogonUI → CP | **UnAdvise()** | Cleanup after logon attempt. |
-| 10 | COM | Object release | CP and credential objects are released; lifecycle ends. |
+| 8 | LogonUI → Credential | **Advise(...)** | Provide the event interface so the credential can notify dynamic changes. |
+| 9 | LogonUI → Credential | **GetSerialization(...)** | Package the credential into a `CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION` for LSA/Winlogon (often just re‑emits what was passed in). |
+| 10 | LogonUI → Credential | **UnAdvise()** | Cleanup when LogonUI no longer needs notifications. |
+| 11 | LogonUI → CP | **UnAdvise()** | Cleanup after logon attempt. |
+| 12 | COM | Object release | CP and credential objects are released; lifecycle ends. |
 
 ---
 

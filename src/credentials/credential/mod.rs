@@ -1,7 +1,5 @@
 use std::sync::{Arc, RwLock};
 
-use log::{debug, error, info};
-
 use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_NOTIMPL, NTSTATUS},
@@ -27,9 +25,11 @@ use windows::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    debug_dev, globals,
-    globals::CLSID_UDS_CREDENTIAL_PROVIDER,
-    utils::{com, lsa},
+    debug_dev, debug_flow, globals::{self, CLSID_UDS_CREDENTIAL_PROVIDER}, utils::{
+        com,
+        log::{debug, error, info, warn},
+        lsa,
+    }
 };
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
@@ -60,6 +60,7 @@ impl Drop for UDSCredential {
 
 impl UDSCredential {
     pub fn new() -> Self {
+        debug_flow!("UDSCredential::new");
         Self {
             cpus: CPUS_LOGON,
             values: Arc::new(RwLock::new(vec![
@@ -158,7 +159,8 @@ impl UDSCredential {
 
     fn unregister_event_manager(&self) -> windows::core::Result<()> {
         debug_dev!("Unregistering credential provider events");
-        if let Some(cookie) = *self.cookie.write().unwrap() {
+        let cookie_opt = *self.cookie.read().unwrap();
+        if let Some(cookie) = cookie_opt {
             com::unregister_from_git(cookie)?;
             *self.cookie.write().unwrap() = None;
         }
@@ -306,11 +308,62 @@ impl UDSCredential {
         );
 
         // Store LSA strings and ensure they live long enough
-        let lsa_username = lsa::LsaUnicodeString::new(&self.credential.read().unwrap().username);
-        let lsa_password = lsa::LsaUnicodeString::new(&String::from_utf8_lossy(
-            &self.credential.read().unwrap().password,
-        ));
-        let lsa_domain = lsa::LsaUnicodeString::new(&self.credential.read().unwrap().domain);
+        let cred_guard = self.credential.read().unwrap();
+        let username = cred_guard.username.clone();
+        let password = String::from_utf8_lossy(&cred_guard.password.clone()).into_owned();
+        let domain = cred_guard.domain.clone();
+        drop(cred_guard); // Release the lock
+
+        // If username is set, our injected credential is used
+        let (username, domain, password) = if username.is_empty() {
+            let values_guard = self.values.read().unwrap();
+            let values_username = values_guard[UdsFieldId::Username as usize].clone();
+            let values_password = values_guard[UdsFieldId::Password as usize].clone();
+            // Infer the domain from username, looking for @ or \\
+            let (values_username, values_domain) =
+                if let Some(slash_pos) = values_username.rfind('\\') {
+                    if slash_pos > 0 {
+                        (
+                            values_username[slash_pos + 1..].to_string(),
+                            values_username[0..slash_pos].to_string(),
+                        )
+                    } else {
+                        (String::new(), values_username)
+                    }
+                } else if let Some(at_pos) = values_username.rfind('@') {
+                    if at_pos > 0 {
+                        (
+                            values_username[..at_pos].to_string(),
+                            values_username[at_pos + 1..].to_string(),
+                        )
+                    } else {
+                        (String::new(), String::new())
+                    }
+                } else {
+                    (String::new(), String::new())
+                };
+
+            let values_password = if values_username.is_empty() && !values_password.is_empty() {
+                warn!("Username is empty but password is set, ignoring password");
+                String::new()
+            } else {
+                values_password
+            };
+            (values_username, values_domain, values_password)
+        } else {
+            (username, domain, password)
+        };
+
+        debug_dev!(
+            "Credentials to be used - Username: '{}', Domain: '{}', Password length: {}",
+            username,
+            domain,
+            password.len()
+        );
+
+        let lsa_username = lsa::LsaUnicodeString::new(&username);
+        let lsa_password = lsa::LsaUnicodeString::new(&password);
+        let lsa_domain = lsa::LsaUnicodeString::new(&domain);
 
         let interactive_logon = KERB_INTERACTIVE_UNLOCK_LOGON {
             Logon: KERB_INTERACTIVE_LOGON {
@@ -334,6 +387,7 @@ impl UDSCredential {
         );
 
         unsafe {
+            std::ptr::write_bytes(pcpcs, 0, 1);
             (*pcpcs).rgbSerialization = pkiul_out;
             (*pcpcs).cbSerialization = cb_total;
             (*pcpcs).ulAuthenticationPackage = match lsa::retrieve_negotiate_auth_package() {
@@ -364,17 +418,20 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::Advise");
         self.register_event_manager(pcpce.unwrap().clone())
     }
 
     // Release the callback
     fn UnAdvise(&self) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::UnAdvise");
         self.unregister_event_manager()
     }
 
     // Invoked when our tile is selected.
     // We do not heed any special here, Just inform to not autologon
     fn SetSelected(&self) -> windows::core::Result<BOOL> {
+        debug_flow!("ICredentialProviderCredential::SetSelected");
         // If we have an username, copy it to values
         self.update_value_from_username();
 
@@ -386,6 +443,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // Our tile is deselected, clear the password value
     // To do not keep it in memory
     fn SetDeselected(&self) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::SetDeselected");
         // If values[<index>] is the password field, clear it
         self.clear_password_value()
     }
@@ -398,16 +456,19 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
         pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::GetFieldState");
         unsafe { self.get_field_state(dwfieldid, pcpfs, pcpfis) }
     }
 
     /// Retrieves the string value of a field.
     fn GetStringValue(&self, dwfieldid: u32) -> windows::core::Result<PWSTR> {
+        debug_flow!("ICredentialProviderCredential::GetStringValue");
         self.get_string_value(dwfieldid)
     }
 
     // Get the bitmap shown on the user tile
     fn GetBitmapValue(&self, dwfieldid: u32) -> windows::core::Result<HBITMAP> {
+        debug_flow!("ICredentialProviderCredential::GetBitmapValue");
         self.get_bitmap_value(dwfieldid)
     }
 
@@ -422,6 +483,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
     // This returns the field id that will have the submit button next to it
     fn GetSubmitButtonValue(&self, dwfieldid: u32) -> windows::core::Result<u32> {
+        debug_flow!("ICredentialProviderCredential::GetSubmitButtonValue");
         if dwfieldid == UdsFieldId::SubmitButton as u32 {
             Ok(UdsFieldId::Password as u32)
         } else {
@@ -435,17 +497,21 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _pcitems: *mut u32,
         _pdwselecteditem: *mut u32,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::GetComboBoxValueCount");
         Err(E_NOTIMPL.into())
     }
     fn GetComboBoxValueAt(&self, _dwfieldid: u32, _dwitem: u32) -> windows::core::Result<PWSTR> {
+        debug_flow!("ICredentialProviderCredential::GetComboBoxValueAt");
         Err(E_NOTIMPL.into())
     }
 
     fn SetStringValue(&self, dwfieldid: u32, psz: &PCWSTR) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::SetStringValue");
         self.set_string_value(dwfieldid, psz)
     }
 
     fn SetCheckboxValue(&self, _dwfieldid: u32, _bchecked: BOOL) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::SetCheckboxValue");
         Err(E_NOTIMPL.into())
     }
 
@@ -454,10 +520,12 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _dwfieldid: u32,
         _dwselecteditem: u32,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::SetComboBoxSelectedValue");
         Err(E_NOTIMPL.into())
     }
 
     fn CommandLinkClicked(&self, _dwfieldid: u32) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::CommandLinkClicked");
         Err(E_NOTIMPL.into())
     }
 
@@ -471,6 +539,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _ppszoptionalstatustext: *mut PWSTR,
         _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::GetSerialization");
         self.serialize(pcpgsr, pcpcs)
     }
 
@@ -481,6 +550,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         _ppszoptionalstatustext: *mut PWSTR,
         _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderCredential::ReportResult");
         if ntsstatus.is_err() || ntssubstatus.is_err() {
             error!("Login failed: {} {}", ntsstatus.0, ntssubstatus.0);
         } else {

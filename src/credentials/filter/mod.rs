@@ -11,7 +11,7 @@ use windows::{
 };
 
 use crate::{
-    debug_dev,
+    debug_dev, debug_flow,
     utils::{helpers, lsa},
 };
 
@@ -20,6 +20,7 @@ pub struct UDSCredentialsFilter {}
 
 impl UDSCredentialsFilter {
     pub fn new() -> Self {
+        debug_flow!("UDSCredentialsFilter::new");
         Self {}
     }
 }
@@ -41,6 +42,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         rgballow: *mut windows::core::BOOL,
         cproviders: u32,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderFilter::Filter");
         let is_rdp = helpers::is_rdp_session();
 
         debug_dev!("Filter called. is_rdp: {} {}", is_rdp, dwflags);

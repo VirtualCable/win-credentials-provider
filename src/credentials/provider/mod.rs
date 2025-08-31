@@ -18,10 +18,9 @@ use windows::{
     core::*,
 };
 
-use log::error;
 use zeroize::Zeroize;
 
-use crate::{credentials::credential::UDSCredential, utils::lsa};
+use crate::{credentials::credential::UDSCredential, debug_flow, utils::{log::error, lsa}};
 use crate::{debug_dev, globals};
 
 // Only available in tests
@@ -42,6 +41,7 @@ pub struct UDSCredentialsProvider {
 
 impl UDSCredentialsProvider {
     pub fn new() -> Self {
+        debug_flow!("UDSCredentialsProvider::new");
         let me: UDSCredentialsProvider = Self {
             credential: Arc::new(RwLock::new(UDSCredential::new())),
             cookie: Arc::new(RwLock::new(None)),
@@ -305,6 +305,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         _dwflags: u32,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProvider::SetUsageScenario");
         debug_dev!("SetUsageScenario called: {:?} {}", cpus, _dwflags);
         self.set_usage_scenario(cpus)
     }
@@ -317,6 +318,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProvider::SetSerialization");
         self.unserialize(pcpcs)
     }
 
@@ -325,14 +327,17 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
         upadvisecontext: usize,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProvider::Advise");
         self.register_event_manager(pcpe.unwrap().clone(), upadvisecontext)
     }
 
     fn UnAdvise(&self) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProvider::UnAdvise");
         self.unregister_event_manager()
     }
 
     fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
+        debug_flow!("ICredentialProvider::GetFieldDescriptorCount");
         Ok(self.get_number_of_fields())
     }
 
@@ -340,6 +345,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         dwindex: u32,
     ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
+        debug_flow!("ICredentialProvider::GetFieldDescriptorAt");
         self.get_field_descriptor_at(dwindex)
     }
 
@@ -350,6 +356,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         pdwdefault: *mut u32,
         pbautologonwithdefault: *mut windows::core::BOOL,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProvider::GetCredentialCount");
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
         unsafe { (*pdwcount, *pdwdefault, *pbautologonwithdefault) = self.get_credential_count()? };
@@ -357,6 +364,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     }
 
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
+        debug_flow!("ICredentialProvider::GetCredentialAt");
         self.get_credential_at(dwindex)
     }
 }

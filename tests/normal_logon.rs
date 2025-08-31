@@ -2,14 +2,18 @@
 
 use win_cred_provider::{
     credentials::fields,
-    debug_dev,
-    utils::{com, logger, traits::To},
+    utils::{com, log, log::info, lsa, traits::To},
 };
 use windows::{
-    Win32::UI::Shell::{
-        CPUS_LOGON, CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
-        CREDENTIAL_PROVIDER_NO_DEFAULT, ICredentialProviderCredentialEvents,
-        ICredentialProviderEvents,
+    Win32::{
+        Foundation::E_INVALIDARG,
+        UI::Shell::{
+            CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+            CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
+            CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_NO_DEFAULT,
+            CREDENTIAL_PROVIDER_STATUS_ICON, ICredentialProviderCredentialEvents,
+            ICredentialProviderEvents,
+        },
     },
     core::*,
 };
@@ -18,7 +22,7 @@ mod utils;
 
 #[test]
 fn test_normal_logon() -> Result<()> {
-    logger::setup_logging("debug");
+    log::setup_logging("debug");
     let factory = utils::com::ClassFactoryTest::new()?;
     // The drop on end, will force the Channel stop
     let provider = factory.create_provider()?;
@@ -34,13 +38,13 @@ fn test_normal_logon() -> Result<()> {
 
     let field_descriptor_count = unsafe { provider.GetFieldDescriptorCount()? };
 
-    debug_dev!("Field descriptor count: {}", field_descriptor_count);
+    info!("Field descriptor count: {}", field_descriptor_count);
 
     let mut fields = Vec::new();
     for fld in 0..field_descriptor_count {
         // Returned value is a comm allocated memory
         let field_descriptor = unsafe { provider.GetFieldDescriptorAt(fld)? };
-        debug_dev!("Field descriptor {}: {:?}", fld, field_descriptor);
+        info!("Field descriptor {}: {:?}", fld, field_descriptor);
         fields.push(field_descriptor);
     }
     let mut cred_count: u32 = 0;
@@ -49,7 +53,7 @@ fn test_normal_logon() -> Result<()> {
     unsafe {
         provider.GetCredentialCount(&mut cred_count, &mut cred_default, &mut autologon)?;
     }
-    debug_dev!(
+    info!(
         "Credential count: {}, default: {}, autologon: {}",
         cred_count,
         cred_default,
@@ -63,7 +67,7 @@ fn test_normal_logon() -> Result<()> {
 
     // Get the Credential interface
     let credential = unsafe { provider.GetCredentialAt(0)? };
-    debug_dev!("Credential: {:?}", credential);
+    info!("Credential: {:?}", credential);
 
     // Advise
     let credential_provider_credential_events =
@@ -90,12 +94,9 @@ fn test_normal_logon() -> Result<()> {
         let mut pcpfs = CREDENTIAL_PROVIDER_FIELD_STATE::default();
         let mut pcpfis = CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE::default();
         unsafe { credential.GetFieldState(dwfieldid, &mut pcpfs, &mut pcpfis)? };
-        debug_dev!(
+        info!(
             "Field ID {}: Type: {:?}, State: {:?}, Interactive State: {:?}",
-            dwfieldid,
-            field.cpft,
-            pcpfs,
-            pcpfis
+            dwfieldid, field.cpft, pcpfs, pcpfis
         );
 
         // Field value
@@ -129,13 +130,13 @@ fn test_normal_logon() -> Result<()> {
                 _value: format!("SUBMIT: {}", button),
             });
         }
-        debug_dev!("Field data: {:?}", fields_data.last().unwrap());
+        info!("Field data: {:?}", fields_data.last().unwrap());
     }
 
     // Simulate user filling fields
     for field in fields_data.iter_mut() {
         if field._id == win_cred_provider::credentials::types::UdsFieldId::Username as u32 {
-            let username = com::alloc_pwstr("username").unwrap().to();
+            let username = com::alloc_pwstr("username@domain").unwrap().to();
             unsafe { credential.SetStringValue(field._id, username)? };
             com::free_pcwstr(username);
         } else if field._id == win_cred_provider::credentials::types::UdsFieldId::Password as u32 {
@@ -144,7 +145,7 @@ fn test_normal_logon() -> Result<()> {
             com::free_pcwstr(password);
         }
     }
-    // Regetting the fields, shold contain the values stored
+    // Re-get the fields, should contain the values stored
     let username: PCWSTR = unsafe {
         credential
             .GetStringValue(win_cred_provider::credentials::types::UdsFieldId::Username as u32)?
@@ -155,24 +156,68 @@ fn test_normal_logon() -> Result<()> {
             .GetStringValue(win_cred_provider::credentials::types::UdsFieldId::Password as u32)?
     }
     .to();
-    assert_eq!(com::pcwstr_to_string(username), "username");
+    assert_eq!(com::pcwstr_to_string(username), "username@domain");
     assert_eq!(com::pcwstr_to_string(password), "password");
 
     // Free COM strings
     com::free_pcwstr(username);
     com::free_pcwstr(password);
 
-    // TODO:
-    // GetSerialization from credential,
-    // UnAdvise from credential
+    // GetSerialization needs a bit mor
+    let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
+    let mut pcpcs = CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
+        ulAuthenticationPackage: 0,
+        clsidCredentialProvider: windows_core::GUID::zeroed(),
+        cbSerialization: 0,
+        rgbSerialization: std::ptr::null_mut(),
+    };
+    let mut null_pwstr: PWSTR = PWSTR::null();
+    let mut cred_prov_icon: CREDENTIAL_PROVIDER_STATUS_ICON = CPSI_NONE;
+
+    let res = unsafe {
+        credential.GetSerialization(
+            &mut pcpgsr,
+            &mut pcpcs as *mut _,
+            &mut null_pwstr,
+            &mut cred_prov_icon,
+        )
+    };
+    assert!(res.is_ok());
+    assert!(!pcpcs.rgbSerialization.is_null());
+    assert!(pcpcs.cbSerialization > 0);
+
+    unsafe { credential.UnAdvise()? };
+
+    let res = unsafe { provider.SetSerialization(&pcpcs) };
+    assert!(res.is_err()); // Should return E_INVALIDARG
+    assert_eq!(res.err().unwrap().code(), E_INVALIDARG);
 
     // End of credential part,UnAdvise provider
     unsafe { provider.UnAdvise()? };
 
-    // TODO:
-    // SetSerialization from provider
+    // Note: This check is done after, at least, SetSerialziation
+    // Because we are goint to alter the pcps strcucture "inline" (unpack it)
+    // We have values on username password and domain, should be present on rgbSerization
+    // because we didn't injected them
+    let unserial =
+        unsafe { lsa::kerb_interactive_unlock_logon_unpack_in_place(pcpcs.rgbSerialization) };
+    assert_eq!(
+        lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName),
+        "username"
+    );
+    assert_eq!(
+        lsa::lsa_unicode_string_to_string(&unserial.Logon.Password),
+        "password"
+    );
+    assert_eq!(
+        lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName),
+        "domain"
+    );
 
-    // Release fields from com memory
+    // Free the rgbSerialization, not needed anymore
+    com::alloc_free(pcpcs.rgbSerialization);
+
+    // Free fields also
     for field in fields {
         com::alloc_free(field);
     }

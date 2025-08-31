@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use log::error;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -12,7 +11,7 @@ use windows::core::PCWSTR;
 use crate::debug_dev;
 
 use crate::messages::{auth::AuthRequest, consts};
-use crate::utils::safe::SafeHandle;
+use crate::utils::{safe::SafeHandle, log::error};
 
 impl AuthRequest {
     pub fn validate(&self) -> Result<()> {

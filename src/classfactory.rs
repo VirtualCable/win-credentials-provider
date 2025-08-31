@@ -48,25 +48,25 @@ impl IClassFactory_Impl for ClassFactory_Impl {
         unsafe {
             *ppvobject = core::ptr::null_mut();
 
-            if *riid == ICredentialProvider::IID {
-                // Instantiate the Credential Provider
-                let iface: IUnknown = UDSCredentialsProvider::new().into();
-                let ptr = iface.as_raw();
-                core::mem::forget(iface); // transferimos la propiedad al caller
-                *ppvobject = ptr as *mut _;
-                return Ok(());
+            match *riid {
+                ICredentialProvider::IID => {
+                    let provider: ICredentialProvider = UDSCredentialsProvider::new().into();
+                    *ppvobject = std::mem::transmute::<ICredentialProvider, *mut core::ffi::c_void>(
+                        provider,
+                    );
+                    Ok(())
+                }
+                ICredentialProviderFilter::IID => {
+                    let filter: ICredentialProviderFilter = UDSCredentialsFilter::new().into();
+                    // `transmute()` is needed to return the real object
+                    *ppvobject = std::mem::transmute::<
+                        ICredentialProviderFilter,
+                        *mut core::ffi::c_void,
+                    >(filter);
+                    Ok(())
+                }
+                _ => Err(E_NOINTERFACE.into()),
             }
-
-            if *riid == ICredentialProviderFilter::IID {
-                // Instantiate a ICredentialProviderFilter
-                let iface: IUnknown = UDSCredentialsFilter::new().into();
-                let ptr = iface.as_raw();
-                core::mem::forget(iface);
-                *ppvobject = ptr as *mut _;
-                return Ok(());
-            }
-
-            Err(E_NOINTERFACE.into())
         }
     }
 

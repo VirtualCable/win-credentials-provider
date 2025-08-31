@@ -1,3 +1,8 @@
+### Notes
+
+This document has been created using search information and AI provided information..
+
+
 # Credential provider call sequence
 
 | Approx. order | Caller | Method `ICredentialProvider` / `ICredentialProviderCredential` | Purpose |

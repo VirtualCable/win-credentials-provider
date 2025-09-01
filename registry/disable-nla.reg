@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; Enable RDP
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Terminal Server]
+"fDenyTSConnections"=dword:00000000
+
+; Disable NLA and force SecurityLayer=0
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp]
+"UserAuthentication"=dword:00000000
+"SecurityLayer"=dword:00000000
+
+; If there are local or domain GPOs, force them here as well
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services]
+"UserAuthentication"=dword:00000000
+"fDenyTSConnections"=dword:00000000

@@ -15,7 +15,7 @@ pub static CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS: [CredentialFieldDescriptor;
     CredentialFieldDescriptor {
         field_id: UdsFieldId::TileImage as u32,
         field_type: CPFT_TILE_IMAGE,
-        label: "Image",
+        label: "UDS Provider",
         guid: GUID::zeroed(),
         state: CPFS_DISPLAY_IN_BOTH,
         interactive_state: CPFIS_NONE,

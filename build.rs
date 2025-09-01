@@ -61,8 +61,8 @@ fn main() {
 
     res.set("FileVersion", &full_version);
     res.set("ProductVersion", &full_version);
-    res.set("ProductName", "UDS RDS Launcher");
-    res.set("FileDescription", "UDS RDS Server Launcher helper");
+    res.set("ProductName", "UDS Credential Provider");
+    res.set("FileDescription", "UDS SSO System");
     res.set(
         "LegalCopyright",
         format!("Copyright © 2012-{current_year} Virtual Cable S.L.U.").as_str(),

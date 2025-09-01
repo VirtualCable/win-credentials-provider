@@ -1,12 +1,31 @@
 use std::{fs::OpenOptions, sync::OnceLock};
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+use widestring::U16CString;
+use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
+use windows::core::PCWSTR;
+
 // Reexport to avoid using crate names for tracing
 pub use tracing::{debug, error, info, trace, warn};
 
 static LOGGER_INIT: OnceLock<()> = OnceLock::new();
+pub static LOG_FLOW_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+pub static FLOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+pub static LAST_STEP: std::sync::OnceLock<std::sync::RwLock<std::time::Instant>> =
+    std::sync::OnceLock::new();
+
+pub fn output_debug_string(s: &str) {
+    {
+        let wide = U16CString::from_str(s).unwrap_or_default();
+        unsafe { OutputDebugStringW(PCWSTR(wide.as_ptr())) };
+    }
+}
 
 pub fn setup_logging(level: &str) {
+    // if UDSCP_DEBUG is on env, use it intead of level
+    let level = std::env::var("UDSCP_DEBUG").unwrap_or_else(|_| level.to_string());
+
     // Bridge log crate logs to tracing
     LOGGER_INIT.get_or_init(|| {
         // Main log file
@@ -58,12 +77,6 @@ pub fn setup_logging(level: &str) {
     });
 }
 
-pub static LOG_FLOW_ENABLED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-pub static FLOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-pub static LAST_STEP: std::sync::OnceLock<std::sync::RwLock<std::time::Instant>> =
-    std::sync::OnceLock::new();
-
 pub fn reset_flow_counter() {
     FLOW_COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
     LAST_STEP
@@ -93,6 +106,8 @@ macro_rules! debug_dev {
         #[cfg(debug_assertions)]
         {
             tracing::info!($($arg)*);
+            let s = format!($($arg)*);
+            $crate::utils::log::output_debug_string(&s);
         }
     };
 }

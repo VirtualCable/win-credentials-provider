@@ -33,6 +33,8 @@ windows = { version = "0.61.3", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
 
+    "Win32_System_Diagnostics_Debug",
+
     # Credential Provider
     "Win32_Security_Credentials",
     "Win32_UI_Shell",

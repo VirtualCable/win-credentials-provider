@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, HINSTANCE, S_FALSE, S_OK};
 use windows::Win32::System::Com::IClassFactory;
+use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
 use windows::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows::Win32::System::SystemServices::{
     DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
@@ -14,16 +15,19 @@ pub extern "system" fn DllMain(
     fdw_reason: u32,
     _lp_reserved: *mut core::ffi::c_void,
 ) -> BOOL {
+unsafe {
+    debug_dev!("Entering DllMain");
     // Store the instance for later retrieval
     globals::set_instance(hinst_dll);
     unsafe {
         match fdw_reason {
             DLL_PROCESS_ATTACH => {
                 let _ = DisableThreadLibraryCalls(hinst_dll.into());
-                // Aquí podrías poner setup_logging("info") si quieres logs desde el arranque
+                utils::log::setup_logging("info");
+                debug_dev!("DLL_PROCESS_ATTACH");
             }
             DLL_PROCESS_DETACH => {
-                // Limpieza si aplica
+                // No Cleanup needed right now
             }
             DLL_THREAD_ATTACH => {}
             DLL_THREAD_DETACH => {}
@@ -42,14 +46,13 @@ pub extern "system" fn DllCanUnloadNow() -> HRESULT {
     }
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]  // System calls cannot be unsafe :)
+#[allow(clippy::not_unsafe_ptr_arg_deref)] // System calls cannot be unsafe :)
 #[unsafe(no_mangle)]
 pub extern "system" fn DllGetClassObject(
     rclsid: *const GUID,
     riid: *const GUID,
     ppv: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
-    utils::log::setup_logging("info");
     unsafe {
         if *rclsid != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
             return CLASS_E_CLASSNOTAVAILABLE;
@@ -63,9 +66,9 @@ pub extern "system" fn DllGetClassObject(
 
 // ======== Modules ========
 // Public to use them in the integration tests
+pub mod broker;
 pub mod classfactory;
 pub mod credentials;
 pub mod globals;
 pub mod messages;
-pub mod broker;
 pub mod utils;

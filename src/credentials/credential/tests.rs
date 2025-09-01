@@ -130,7 +130,12 @@ fn test_serialization_logon_user_pas_nodom_values() -> Result<()> {
     do_test_serialization_logon("testuser", "testpassword", "", true)
 }
 
-fn do_test_serialization_logon(username: &str, password: &str, domain: &str, on_values: bool) -> Result<()> {
+fn do_test_serialization_logon(
+    username: &str,
+    password: &str,
+    domain: &str,
+    on_values: bool,
+) -> Result<()> {
     setup_logging("debug");
     let credential = UDSCredential::new();
     if !on_values {
@@ -140,7 +145,8 @@ fn do_test_serialization_logon(username: &str, password: &str, domain: &str, on_
         cred.domain = domain.to_string();
     } else {
         if domain.is_empty() {
-            credential.values.write().unwrap()[UdsFieldId::Username as usize] = username.to_string();
+            credential.values.write().unwrap()[UdsFieldId::Username as usize] =
+                username.to_string();
         } else if domain.contains('.') {
             credential.values.write().unwrap()[UdsFieldId::Username as usize] =
                 format!("{}@{}", username, domain);
@@ -171,7 +177,14 @@ fn do_test_serialization_logon(username: &str, password: &str, domain: &str, on_
 
     let recv_username = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
     let recv_password = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
-    let recv_domain = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
+    let recv_domain =
+        crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
+
+    let domain = if domain.is_empty() {
+        crate::utils::helpers::get_computer_name()
+    } else {
+        domain.to_string()
+    };
 
     assert_eq!(recv_username, username);
     assert_eq!(recv_password, password);

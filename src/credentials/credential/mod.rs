@@ -362,6 +362,12 @@ impl UDSCredential {
             (username, domain, password)
         };
 
+        let domain = if domain.is_empty() {
+            crate::utils::helpers::get_computer_name()
+        } else {
+            domain
+        };
+
         debug_dev!(
             "Credentials to be used - Username: '{}', Domain: '{}', Password length: {}",
             username,

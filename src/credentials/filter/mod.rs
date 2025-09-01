@@ -49,12 +49,21 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
 
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
+                if !is_rdp {
+                    debug_dev!("Not an RDP session, allowing all providers");
+                    // If not RDP, allow all providers
+                    for i in 0..cproviders as isize {
+                        unsafe {
+                            *rgballow.offset(i) = true.into();
+                        }
+                    }
+                    return Ok(());
+                }
                 // In logon or unlock workstation, we only allow our provider if it's not an RDP session
                 for i in 0..cproviders as isize {
                     unsafe {
                         let clsid = *rgclsidproviders.offset(i);
-                        let allow =
-                            clsid == crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER && !is_rdp;
+                        let allow = clsid == crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER;
                         *rgballow.offset(i) = allow.into();
                         debug_dev!("Filter: provider: {:?}, allow: {}", clsid, allow);
                     }
@@ -70,8 +79,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
 
         Ok(())
     }
-    ///
-    /// Update the remote credential serialization
+
     /// Only invoked when the user is logging in and NLA is enabled
     #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn UpdateRemoteCredential(
@@ -79,6 +87,8 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential");
+
         debug_dev!("UpdateRemoteCredential called. {:?}", pcpcsin);
         #[cfg(debug_assertions)]
         {

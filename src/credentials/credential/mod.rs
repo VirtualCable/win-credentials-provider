@@ -255,20 +255,24 @@ impl UDSCredential {
         // Our first option is use the credential received into cred
         let cred = self.credential();
         let cred = if !cred.is_valid() {
+            debug_dev!("No valid credentials found in our creds. Looking for filter credentials...");
             // Second, is use the credential from the filter, that is OUR credential
             // This credential has been alread filtered, so it's valid and ours.
             // The get_received_credential cleans the filter credential
             if let Some(filter_credential) = UDSCredentialsFilter::get_received_credential() {
+                debug_dev!("Using filter credentials: {:?}", filter_credential);
                 filter_credential
             } else {
                 cred
             }
         } else {
+            debug_dev!("Using valid credentials found in our creds: {:?}", cred);
             cred
         };
 
         // If no valid credentials, fallback to interactive
         let (username, password, domain) = if !cred.is_valid() {
+            debug_dev!("No valid credentials, fallback to interactive");
             let values_guard = self.values.read().unwrap();
             let (username, domain) = helpers::split_username_domain(
                 &values_guard[UdsFieldId::Username as usize].clone(),

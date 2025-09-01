@@ -107,22 +107,48 @@ fn test_set_string_value() {
 
 #[test]
 fn test_serialization_logon_user_pas_dom() -> Result<()> {
-    do_test_serialization_logon("testuser", "testpassword", "testdomain")
+    do_test_serialization_logon("testuser", "testpassword", "testdomain", false)
 }
 
 #[test]
 fn test_serialization_logon_user_pas_nodom() -> Result<()> {
-    do_test_serialization_logon("testuser", "testpassword", "")
+    do_test_serialization_logon("testuser", "testpassword", "", false)
 }
 
-fn do_test_serialization_logon(username: &str, password: &str, domain: &str) -> Result<()> {
+#[test]
+fn test_serialization_logon_user_pas_dom_values() -> Result<()> {
+    do_test_serialization_logon("testuser", "testpassword", "testdomain", true)
+}
+
+#[test]
+fn test_serialization_logon_user_pas_dom_fqdn() -> Result<()> {
+    do_test_serialization_logon("testuser", "testpassword", "testdomain.com", false)
+}
+
+#[test]
+fn test_serialization_logon_user_pas_nodom_values() -> Result<()> {
+    do_test_serialization_logon("testuser", "testpassword", "", true)
+}
+
+fn do_test_serialization_logon(username: &str, password: &str, domain: &str, on_values: bool) -> Result<()> {
     setup_logging("debug");
     let credential = UDSCredential::new();
-    {
+    if !on_values {
         let mut cred = credential.credential.write().unwrap();
         cred.username = username.to_string();
         cred.password = Zeroizing::new(password.as_bytes().to_vec());
         cred.domain = domain.to_string();
+    } else {
+        if domain.is_empty() {
+            credential.values.write().unwrap()[UdsFieldId::Username as usize] = username.to_string();
+        } else if domain.contains('.') {
+            credential.values.write().unwrap()[UdsFieldId::Username as usize] =
+                format!("{}@{}", username, domain);
+        } else {
+            credential.values.write().unwrap()[UdsFieldId::Username as usize] =
+                format!("{}\\{}", domain, username);
+        }
+        credential.values.write().unwrap()[UdsFieldId::Password as usize] = password.to_string();
     }
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
     let mut pcpcs = CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {

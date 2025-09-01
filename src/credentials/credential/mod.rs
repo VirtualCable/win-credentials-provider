@@ -351,12 +351,6 @@ impl UDSCredential {
                     (values_username, String::new())
                 };
 
-            let values_domain = if values_domain.is_empty() {
-                crate::utils::helpers::get_computer_name()
-            } else {
-                values_domain
-            };
-
             let values_password = if values_username.is_empty() && !values_password.is_empty() {
                 warn!("Username is empty but password is set, ignoring password");
                 String::new()

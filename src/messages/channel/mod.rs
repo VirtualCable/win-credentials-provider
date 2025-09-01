@@ -25,14 +25,12 @@ impl AuthRequest {
         if self.auth_token.len() != 64 {
             return Err(anyhow::anyhow!("Invalid auth_token length"));
         }
-        // Username and password must be provided and be less than 128 bytes
-        if self.username.is_empty() || self.password.is_empty() {
-            return Err(anyhow::anyhow!("Username and password must be provided"));
+        // Boker credential and password must be provided and be less than 128 bytes
+        if self.broker_credential.is_empty() {
+            return Err(anyhow::anyhow!("Boker credential"));
         }
-        if self.username.len() > 128 || self.password.len() > 128 {
-            return Err(anyhow::anyhow!(
-                "Username and password must be less than 128 bytes"
-            ));
+        if crate::broker::get_broker_credential(&self.broker_credential).is_none() {
+            return Err(anyhow::anyhow!("Invalid broker credential format"));
         }
         Ok(())
     }

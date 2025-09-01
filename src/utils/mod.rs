@@ -1,4 +1,5 @@
 pub mod com;
+pub mod crypt;
 pub mod helpers;
 pub mod http_client;
 pub mod http_json;

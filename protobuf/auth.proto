@@ -5,8 +5,6 @@ package auth;
 message AuthRequest {
   fixed32 protocol_version = 1;  // Current is 0x
   string auth_token = 2;     // This token is used for authentication
-  string username = 3;
-  string password = 4;
-  string domain = 5;
+  string broker_credential = 3;
 
 }

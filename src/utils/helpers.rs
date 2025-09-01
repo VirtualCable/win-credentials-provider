@@ -101,6 +101,34 @@ pub fn sec_attrs_for_sid(sid: PSID) -> Result<SecurityAttributes> {
     }
 }
 
+// Compose, given an username and a domain, username\domain, username@domain or, if domain is empty username@get_computer_name
+pub fn username_with_domain(username: &str, domain: &str) -> String {
+    if domain.is_empty() {
+        format!("{}@{}", username, get_computer_name())
+    } else if domain.contains('.') {
+        format!("{}@{}", username, domain)
+    } else {
+        format!("{}\\{}", domain, username)
+    }
+}
+
+// Extract domain from username, domain\\username, username@domain o usename (no domain, will return get_computer_name)
+// Returns (username, domain)
+pub fn split_username_domain(username: &str) -> (String, String) {
+    if username.contains('@') {
+        let parts: Vec<&str> = username.split('@').collect();
+        if parts.len() == 2 {
+            return (parts[0].to_string(), parts[1].to_string());
+        }
+    } else if username.contains('\\') {
+        let parts: Vec<&str> = username.split('\\').collect();
+        if parts.len() == 2 {
+            return (parts[1].to_string(), parts[0].to_string());
+        }
+    }
+    (username.to_string(), get_computer_name())
+}
+
 pub fn is_rdp_session() -> bool {
     // If environment variable "UDSCP_FORCE_RDP" is set, treat as RDP session
     if let Ok(value) = std::env::var("UDSCP_FORCE_RDP") && value == "1" {

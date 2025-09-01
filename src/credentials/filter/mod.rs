@@ -139,9 +139,9 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
                     password,
                     domain
                 );
-                if crate::broker::is_broker_credential(&username) {
+                if let Some((ticket, key)) = crate::broker::get_broker_credential(&username) {
                     UDSCredentialsFilter::set_received_credential(Some(
-                        types::Credential::with_credentials(&username, &password, &domain),
+                        types::Credential::with_credentials(&ticket, &key),
                     ));
                 }
             }

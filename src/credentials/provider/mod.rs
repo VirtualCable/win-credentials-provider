@@ -20,15 +20,11 @@ use windows::{
     core::*,
 };
 
-use zeroize::Zeroize;
-
 use crate::{
+    broker,
     credentials::{credential::UDSCredential, filter::UDSCredentialsFilter},
     debug_flow,
-    utils::{
-        log::{self, error},
-        lsa,
-    },
+    utils::log::{self, error},
 };
 use crate::{debug_dev, globals};
 
@@ -70,14 +66,17 @@ impl UDSCredentialsProvider {
         msg: crate::messages::auth::AuthRequest,
     ) -> windows::core::Result<()> {
         // Update credentials
-        self.credential
-            .write()
-            .unwrap()
-            .set_credentials(&msg.username, &msg.password, &msg.domain);
+        // Get broker credential
+        if let Some((ticket, key)) = broker::get_broker_credential(&msg.broker_credential) {
+            debug_dev!("Received broker credential, obtaining real credentials from broker");
+            self.credential.write().unwrap().set_token(&ticket, &key);
 
-        // If we have an event manager, notify it of the credential change
-        if let Some(event_manager) = self.get_event_manager()? {
-            unsafe { event_manager.CredentialsChanged(*self.up_advise_context.read().unwrap())? };
+            // If we have an event manager, notify it of the credential change
+            if let Some(event_manager) = self.get_event_manager()? {
+                unsafe {
+                    event_manager.CredentialsChanged(*self.up_advise_context.read().unwrap())?
+                };
+            }
         }
 
         Ok(())
@@ -134,7 +133,7 @@ impl UDSCredentialsProvider {
     ) -> windows::core::Result<()> {
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
-                self.credential.write().unwrap().reset_credentials();
+                self.credential.write().unwrap().reset_token();
                 self.credential.write().unwrap().set_usage_scenario(cpus);
                 Ok(())
             }
@@ -149,57 +148,32 @@ impl UDSCredentialsProvider {
     #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
     fn unserialize(
         &self,
-        pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+        _pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        unsafe {
-            if (*pcpcs).clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
-                return Err(E_INVALIDARG.into());
-            }
-            debug_dev!("SetSerialization called with our CLSID");
-            let mut rgb_serialization = vec![0; (*pcpcs).cbSerialization as usize];
-            // Copy the data to unserialize
-            rgb_serialization.copy_from_slice(std::slice::from_raw_parts(
-                (*pcpcs).rgbSerialization,
-                (*pcpcs).cbSerialization as usize,
-            ));
-            // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
-            // so logon points to the same memory as the packed structure
-            let logon =
-                lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _);
+        // unsafe {
+        //     if (*pcpcs).clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
+        //         return Err(E_INVALIDARG.into());
+        //     }
+        //     debug_dev!("SetSerialization called with our CLSID");
+        //     let mut rgb_serialization = vec![0; (*pcpcs).cbSerialization as usize];
+        //     // Copy the data to unserialize
+        //     rgb_serialization.copy_from_slice(std::slice::from_raw_parts(
+        //         (*pcpcs).rgbSerialization,
+        //         (*pcpcs).cbSerialization as usize,
+        //     ));
+        //     // Convert to KERB_INTERACTIVE_UNLOCK_LOGON using lsa utils. Note that is "in_place"
+        //     // so logon points to the same memory as the packed structure
+        //     let logon =
+        //         lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _);
 
-            // Username should be our token, password our shared_secret with our server
-            // and domain is simply ignored :)
-            let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
-            let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
-            let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
+        //     // Username should be our token, password our shared_secret with our server
+        //     // and domain is simply ignored :)
+        //     let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
+        //     let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
+        //     let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
-            if !crate::broker::is_broker_credential(&username) {
-                return Err(E_INVALIDARG.into());
-            }
-
-            match crate::broker::get_credentials_from_broker(&username, &password, &domain) {
-                Ok((username, mut password, domain)) => {
-                    self.credential
-                        .write()
-                        .unwrap()
-                        .set_credentials(&username, &password, &domain);
-
-                    debug_dev!(
-                        "SetSerialization extracted credentials: {}\\{}",
-                        domain,
-                        username
-                    );
-                    // Clean up retrieved password
-                    password.zeroize();
-                }
-                Err(e) => {
-                    error!("Failed to get credentials from broker: {:?}", e);
-                    return Err(E_INVALIDARG.into());
-                }
-            };
-
-            rgb_serialization.zeroize(); // Clean up OUR packed data also
-        }
+        //     rgb_serialization.zeroize(); // Clean up OUR packed data also
+        // }
 
         Ok(())
     }
@@ -257,7 +231,7 @@ impl UDSCredentialsProvider {
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
         let is_rdp = crate::utils::helpers::is_rdp_session();
-        let has_valid_creds = self.credential.read().unwrap().is_ready();
+        let has_valid_creds = self.credential.read().unwrap().has_valid_credentials();
         let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(

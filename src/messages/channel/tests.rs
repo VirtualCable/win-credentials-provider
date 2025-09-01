@@ -7,6 +7,9 @@ use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
 
 use crate::{messages::auth::*, utils::log::{setup_logging, info}};
 
+const VALID_BROKER_CREDENTIAL: &str =
+        "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
+
 #[test]
 fn test_create_destroy_create() {
     setup_logging("debug");
@@ -117,9 +120,12 @@ fn test_invalid_auth_request() {
 
     let pipe_handle = open_client_pipe(PIPE_NAME);
 
+    // Any message over 1024 size on header, will close immediately
+    // Note, that, in fact, the message will be a lot smaller
+    // the auth_token + the broker credential
     let buf = rand::rng()
         .sample_iter(&distr::Alphanumeric)
-        .take(1024)
+        .take(1023)
         .map(char::from)
         .collect::<String>()
         .encode_to_vec();
@@ -162,9 +168,7 @@ fn test_invalid_structure_auth_request() {
         &AuthRequest {
             protocol_version: 0xDEADBEEF,          // Incorrect protocol
             auth_token: "short_token".to_string(), // Too short
-            username: "".to_string(),              // Empty username
-            password: "p".repeat(129),             // Too long
-            domain: "test.local".to_string(),
+            broker_credential: "".to_string(),      // Empty broker credential
         },
     )
     .unwrap();
@@ -299,9 +303,7 @@ pub fn test_cannot_dos_auth_request() {
         &AuthRequest {
             protocol_version: consts::MAGIC_HEADER,
             auth_token: token.clone(),
-            username: "adolfo".to_string(),
-            password: "supersecret".to_string(),
-            domain: "test.local".to_string(),
+            broker_credential: VALID_BROKER_CREDENTIAL.into(),
         },
     )
     .unwrap();
@@ -419,9 +421,7 @@ fn write_pipe_auth_request(handle: &SafeHandle, auth_token: &str) -> Result<()> 
     let msg = AuthRequest {
         protocol_version: consts::MAGIC_HEADER,
         auth_token: auth_token.to_string(),
-        username: "adolfo".to_string(),
-        password: "supersecret".to_string(),
-        domain: "test.local".to_string(),
+        broker_credential: VALID_BROKER_CREDENTIAL.into(),
     };
     write_pipe_auth_request_with_auth_req(handle, &msg)
 }
@@ -443,8 +443,6 @@ fn check_auth_request(server: &ChannelServer, expected_token: &str) -> AuthReque
         "Invalid protocol version"
     );
     assert!(request.auth_token == expected_token, "Invalid auth token");
-    assert!(!request.username.is_empty(), "Username should not be empty");
-    assert!(!request.password.is_empty(), "Password should not be empty");
-    assert!(!request.domain.is_empty(), "Domain should not be empty");
+    assert!(request.broker_credential == VALID_BROKER_CREDENTIAL, "Invalid broker credential");
     request
 }

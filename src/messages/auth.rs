@@ -8,9 +8,5 @@ pub struct AuthRequest {
     #[prost(string, tag = "2")]
     pub auth_token: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub username: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub password: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub domain: ::prost::alloc::string::String,
+    pub broker_credential: ::prost::alloc::string::String,
 }

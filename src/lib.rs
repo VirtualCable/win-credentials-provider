@@ -68,3 +68,6 @@ pub mod credentials;
 pub mod globals;
 pub mod messages;
 pub mod utils;
+
+#[cfg(test)]
+pub mod test_utils;

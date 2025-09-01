@@ -7,7 +7,7 @@ use windows::Win32::{
     },
 };
 use windows::core::{GUID, PWSTR};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 #[derive(Debug, Clone)]
 pub struct CredentialFieldDescriptor {
@@ -81,26 +81,48 @@ pub enum UdsFieldId {
 
 #[derive(Debug, Clone)]
 pub struct Credential {
-    pub username: String,
-    pub password: Zeroizing<Vec<u8>>,
-    pub domain: String,
+    pub token: String,
+    pub key: String,
 }
 
 impl Credential {
-    pub fn new(username: String, password: Zeroizing<Vec<u8>>, domain: String) -> Self {
+    pub fn new() -> Self {
         Self {
-            username,
-            password,
-            domain,
+            token: String::new(),
+            key: String::new(),
         }
     }
 
-    pub fn with_credentials(username: &str, password: &str, domain: &str) -> Self {
+    pub fn with_credentials(token: &str, key: &str) -> Self {
         Self {
-            username: username.to_string(),
-            password: Zeroizing::new(password.as_bytes().to_vec()),
-            domain: domain.to_string(),
+            token: token.to_string(),
+            key: key.to_string(),
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.token.clear();
+        self.key.clear();
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.token.is_empty() && !self.key.is_empty()
+    }
+}
+
+impl Drop for Credential {
+    fn drop(&mut self) {
+        // Zeroize the sensitive data
+        let mut token = Zeroizing::new(self.token.clone());
+        let mut key = Zeroizing::new(self.key.clone());
+        token.zeroize();
+        key.zeroize();
+    }
+}
+
+impl Default for Credential {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

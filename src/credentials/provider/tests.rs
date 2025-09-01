@@ -1,17 +1,13 @@
 use std::{sync::atomic::AtomicU32, time::Instant};
 
-use rand::Rng;
-use windows::Win32::{
-    Security::Authentication::Identity::{
-        KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
-    },
-    UI::Shell::ICredentialProviderEvents_Impl,
-};
-use zeroize::Zeroizing;
+use windows::Win32::UI::Shell::ICredentialProviderEvents_Impl;
 
 use super::*;
 
-use crate::utils::{com::ComInitializer, log::setup_logging, lsa::LsaUnicodeString, traits::To};
+use crate::utils::{com::ComInitializer, log::setup_logging, traits::To};
+
+const VALID_BROKER_CREDENTIAL: &str =
+    "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
@@ -108,16 +104,13 @@ fn test_on_data_arrived() -> Result<()> {
     let auth_request = crate::messages::auth::AuthRequest {
         protocol_version: 1,
         auth_token: "auth_token".into(),
-        username: "username".into(),
-        password: "password".into(),
-        domain: "domain".into(),
+        broker_credential: VALID_BROKER_CREDENTIAL.into(),
     };
     provider.on_data_arrived(auth_request)?;
 
-    assert!(provider.credential.read().unwrap().is_ready());
-    assert!(provider.credential.read().unwrap().username() == "username");
-    assert!(provider.credential.read().unwrap().password() == Zeroizing::new("password".into()));
-    assert!(provider.credential.read().unwrap().domain() == "domain");
+    let credential_guard = provider.credential.read().unwrap();
+    assert!(credential_guard.has_valid_credentials());
+
     Ok(())
 }
 
@@ -130,14 +123,13 @@ fn test_set_usage_scenario_logon() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_credentials("username", "password", "domain");
+        .set_token("token", "key");
 
     provider.set_usage_scenario(CPUS_LOGON)?;
     // Ensure credentials are reset
-    assert!(!provider.credential.read().unwrap().is_ready());
-    assert!(provider.credential.read().unwrap().username().is_empty());
-    assert!(provider.credential.read().unwrap().password().is_empty());
-    assert!(provider.credential.read().unwrap().domain().is_empty());
+    assert!(!provider.credential.read().unwrap().has_valid_credentials());
+    assert!(provider.credential.read().unwrap().token().is_empty());
+    assert!(provider.credential.read().unwrap().key().is_empty());
 
     Ok(())
 }
@@ -151,13 +143,12 @@ fn test_set_usage_scenario_unlock() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_credentials("username", "password", "domain");
+        .set_token("token", "key");
     provider.set_usage_scenario(CPUS_UNLOCK_WORKSTATION)?;
     // Ensure credentials are reset
-    assert!(!provider.credential.read().unwrap().is_ready());
-    assert!(provider.credential.read().unwrap().username().is_empty());
-    assert!(provider.credential.read().unwrap().password().is_empty());
-    assert!(provider.credential.read().unwrap().domain().is_empty());
+    assert!(!provider.credential.read().unwrap().has_valid_credentials());
+    assert!(provider.credential.read().unwrap().token().is_empty());
+    assert!(provider.credential.read().unwrap().key().is_empty());
 
     Ok(())
 }
@@ -192,126 +183,35 @@ fn test_set_usage_scenario_plap() -> Result<()> {
     Ok(())
 }
 
-fn generate_broker_username() -> String {
-    // Calc user name that comply with rules on crate::broker
-    // const BROKER_CREDENTIAL_PREFIX  // Broker credential prefix
-    // const BROKER_CREDENTIAL_SIZE    // Broker credential size
-    format!(
-        "{}{}",
-        crate::broker::BROKER_CREDENTIAL_PREFIX,
-        rand::rng()
-            .sample_iter(&rand::distr::Alphanumeric)
-            .take(
-                crate::broker::BROKER_CREDENTIAL_SIZE
-                    - crate::broker::BROKER_CREDENTIAL_PREFIX.len()
-            )
-            .map(char::from)
-            .collect::<String>()
-    )
-}
+// fn get_credential_serialization(
+//     username: &str,
+//     password: &str,
+//     domain: &str,
+//     guid: GUID,
+// ) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
+//     let _lsa_user = LsaUnicodeString::new(username);
+//     let _lsa_pass = LsaUnicodeString::new(password);
+//     let _lsa_domain = LsaUnicodeString::new(domain);
 
-fn generate_broker_password() -> String {
-    let username = generate_broker_username();
-    // replace 4 first chars by x for example
-    // (Only to not get us confused if we see "uds:")
-    format!("XxXx{}", &username[4..])
-}
+//     let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
+//         Logon: KERB_INTERACTIVE_LOGON {
+//             MessageType: KerbInteractiveLogon,
+//             LogonDomainName: *_lsa_domain.as_lsa(),
+//             UserName: *_lsa_user.as_lsa(),
+//             Password: *_lsa_pass.as_lsa(),
+//         },
+//         LogonId: Default::default(),
+//     };
+//     // Pack the logon
+//     let (packed, size) = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_pack(&logon)? };
 
-fn get_credential_serialization(
-    username: &str,
-    password: &str,
-    domain: &str,
-    guid: GUID,
-) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
-    let _lsa_user = LsaUnicodeString::new(username);
-    let _lsa_pass = LsaUnicodeString::new(password);
-    let _lsa_domain = LsaUnicodeString::new(domain);
-
-    let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
-        Logon: KERB_INTERACTIVE_LOGON {
-            MessageType: KerbInteractiveLogon,
-            LogonDomainName: *_lsa_domain.as_lsa(),
-            UserName: *_lsa_user.as_lsa(),
-            Password: *_lsa_pass.as_lsa(),
-        },
-        LogonId: Default::default(),
-    };
-    // Pack the logon
-    let (packed, size) = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_pack(&logon)? };
-
-    Ok(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
-        ulAuthenticationPackage: 0,
-        clsidCredentialProvider: guid,
-        cbSerialization: size,
-        rgbSerialization: packed,
-    })
-}
-
-#[test]
-#[serial_test::serial(CredentialProvider)]
-fn test_unserialize_ok() -> Result<()> {
-    // Ensure broker info is None, so no request is done.
-    // Wil generate a log of the failure, but no problem, it's fine
-    let mut server = mockito::Server::new();
-
-    let _mock = server
-        .mock("POST", "/credential")
-        .with_status(200)
-        .with_header("Content-Type", "application/json")
-        .with_body(r#"{"username":"test_user","password":"test_pass","domain":"test_domain"}"#)
-        .create();
-
-    let url = server.url() + "/credential";
-    globals::set_broker_info(&url, true);
-
-    let provider = create_provider();
-    let username = generate_broker_username();
-    let password = generate_broker_password();
-    let cred_serial = get_credential_serialization(
-        &username,
-        &password,
-        "domain",
-        crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
-    )?;
-
-    provider.unserialize(&cred_serial).unwrap(); // If fails will stop here
-
-    Ok(())
-}
-
-#[test]
-#[serial_test::serial(CredentialProvider)]
-fn test_unserialize_bad_guid() -> Result<()> {
-    let provider = create_provider();
-    let cred_serial = get_credential_serialization(
-        &generate_broker_username(),
-        "password",
-        "domain",
-        GUID::from(9),
-    )?;
-
-    // Should fail
-    assert!(provider.unserialize(&cred_serial).is_err());
-
-    Ok(())
-}
-
-#[test]
-#[serial_test::serial(CredentialProvider)]
-fn test_unserialize_invalid_username() -> Result<()> {
-    let provider = create_provider();
-    let cred_serial = get_credential_serialization(
-        "username",
-        "password",
-        "domain",
-        crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
-    )?;
-
-    // Should fail
-    assert!(provider.unserialize(&cred_serial).is_err());
-
-    Ok(())
-}
+//     Ok(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
+//         ulAuthenticationPackage: 0,
+//         clsidCredentialProvider: guid,
+//         cbSerialization: size,
+//         rgbSerialization: packed,
+//     })
+// }
 
 #[derive(Clone)]
 // Fake ICredentialProviderEvents for tests
@@ -416,7 +316,7 @@ fn test_get_credential_count_ok() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_credentials("username", "password", "domain");
+        .set_token("username", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
@@ -431,7 +331,7 @@ fn test_get_credential_count_no_creds() -> Result<()> {
     unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
 
     let provider = create_provider();
-    provider.credential.write().unwrap().reset_credentials();
+    provider.credential.write().unwrap().reset_token();
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(
         cred_count,
@@ -443,7 +343,7 @@ fn test_get_credential_count_no_creds() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_credentials("username", "password", "domain");
+        .set_token("token", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
@@ -459,7 +359,7 @@ fn test_get_credential_count_no_rdp() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_credentials("username", "password", "domain");
+        .set_token("token", "key");
 
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(

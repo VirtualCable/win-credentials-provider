@@ -22,21 +22,20 @@ use windows::{
     },
     core::*,
 };
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroize;
 
 use crate::{
+    credentials::{filter::UDSCredentialsFilter, types},
     debug_dev, debug_flow,
     globals::{self, CLSID_UDS_CREDENTIAL_PROVIDER},
     utils::{
-        com,
-        log::{debug, error, info, warn},
+        com, helpers,
+        log::{debug, error, info},
         lsa,
     },
-    credentials::types,
 };
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
-
 
 #[allow(dead_code)]
 #[implement(ICredentialProviderCredential)]
@@ -44,15 +43,8 @@ use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
     values: Arc<RwLock<Vec<String>>>, // Array containing the values of the fields
-    credential: Arc<RwLock<types::Credential>>,   // Actual credentials
+    credential: Arc<RwLock<types::Credential>>, // Actual credentials
     cookie: Arc<RwLock<Option<u32>>>,
-}
-
-impl Drop for UDSCredential {
-    fn drop(&mut self) {
-        let mut credential = self.credential.write().unwrap();
-        credential.password.zeroize(); // Clear the password on drop
-    }
 }
 
 impl UDSCredential {
@@ -64,76 +56,48 @@ impl UDSCredential {
                 String::new();
                 UdsFieldId::NumFields as usize
             ])),
-            credential: Arc::new(RwLock::new(types::Credential {
-                username: String::new(),
-                password: Zeroizing::new(Vec::new()),
-                domain: String::new(),
-            })),
+            credential: Arc::new(RwLock::new(Default::default())),
             cookie: Arc::new(RwLock::new(None)),
         }
     }
-    pub fn reset_credentials(&mut self) {
-        let mut credential = self.credential.write().unwrap();
-        credential.username.clear();
-        credential.password.zeroize();
-        credential.domain.clear();
-        let mut values = self.values.write().unwrap();
-        for v in values.iter_mut() {
-            v.clear();
-        }
+    pub fn reset_token(&mut self) {
+        self.credential.write().unwrap().reset();
+
+        // let mut values = self.values.write().unwrap();
+        // for v in values.iter_mut() {
+        //     v.clear();
+        // }
     }
 
-    pub fn set_credentials(&mut self, username: &str, password: &str, domain: &str) {
+    pub fn has_valid_credentials(&self) -> bool {
+        self.credential.read().unwrap().is_valid()
+    }
+
+    pub fn set_token(&mut self, token: &str, key: &str) {
         // If no domain, use GetComputerNameW
         // Ensure previous password is cleared with zero values before
         let mut credential = self.credential.write().unwrap();
-        credential.password.zeroize();
-        let temp = password.as_bytes().to_vec();
-        credential.password = Zeroizing::new(temp);
-
-        if domain.is_empty() {
-            credential.domain = crate::utils::helpers::get_computer_name();
-        } else {
-            credential.domain = domain.to_string();
-        }
-
-        credential.username = username.to_string();
-        let mut values = self.values.write().unwrap();
-        *values = (0..UdsFieldId::NumFields as usize)
-            .map(|i| match i {
-                x if x == UdsFieldId::SubmitButton as usize => "Submit".into(),
-                x if x == UdsFieldId::Username as usize => credential.username.clone(),
-                _ => String::new(),
-            })
-            .collect();
+        credential.reset();
+        credential.token = token.to_string();
+        credential.key = key.to_string();
     }
 
-    
-    pub fn set_username_value(&self, username: &str) {
-        self.values.write().unwrap()[UdsFieldId::Username as usize] = username.to_string();
+    pub fn token(&self) -> String {
+        self.credential.read().unwrap().token.clone()
     }
 
-
-    /// Returns true if the credential is ready to be used
-    pub fn is_ready(&self) -> bool {
-        let credential = self.credential.read().unwrap();
-        // Domain is optional
-        !credential.username.is_empty() && !credential.password.is_empty()
+    pub fn key(&self) -> String {
+        self.credential.read().unwrap().key.clone()
     }
 
-    pub fn username(&self) -> String {
-        let credential = self.credential.read().unwrap();
-        credential.username.clone()
+    pub fn set_credentials_values(&self, username: &str, password: &str, domain: &str) {
+        self.values.write().unwrap()[UdsFieldId::Username as usize] =
+            helpers::username_with_domain(username, domain);
+        self.values.write().unwrap()[UdsFieldId::Password as usize] = password.to_string();
     }
 
-    pub fn password(&self) -> Zeroizing<Vec<u8>> {
-        let credential = self.credential.read().unwrap();
-        Zeroizing::new(credential.password.to_vec())
-    }
-
-    pub fn domain(&self) -> String {
-        let credential = self.credential.read().unwrap();
-        credential.domain.clone()
+    pub fn credential(&self) -> types::Credential {
+        self.credential.read().unwrap().clone()
     }
 
     pub fn set_usage_scenario(&mut self, cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO) {
@@ -170,39 +134,15 @@ impl UDSCredential {
         Ok(())
     }
 
-    fn update_value_from_username(&self) {
-        debug_dev!("Updating value from username");
-
-        let username: Option<String> = {
-            let credential = self.credential.read().unwrap();
-            if credential.username.is_empty() {
-                None
-            } else {
-                // If we have domain and has a point, set username to username@domain
-                // else, if we have domain, set domain\username
-                Some(if !credential.domain.is_empty() {
-                    if credential.domain.contains('.') {
-                        format!("{}@{}", credential.username, credential.domain)
-                    } else {
-                        format!("{}\\{}", credential.domain, credential.username)
-                    }
-                } else {
-                    credential.username.clone()
-                })
-            }
-        };
-        if let Some(username) = username {
-            self.values.write().unwrap()[UdsFieldId::Username as usize] = username;
-        }
-    }
-
     fn clear_password_value(&self) -> windows::core::Result<()> {
         debug_dev!("Clearing password field");
 
-        let mut values: std::sync::RwLockWriteGuard<'_, Vec<String>> = self.values.write().unwrap();
-        if !values[UdsFieldId::Password as usize].is_empty() {
-            values[UdsFieldId::Password as usize].zeroize(); // Clear the password field
+        let mut values_guard: std::sync::RwLockWriteGuard<'_, Vec<String>> =
+            self.values.write().unwrap();
+        if !values_guard[UdsFieldId::Password as usize].is_empty() {
+            values_guard[UdsFieldId::Password as usize].zeroize(); // Clear the password field
         }
+
         let cred_prov_events = self.get_icredential_provider_credential_event();
         if let Some(events) = cred_prov_events {
             debug_dev!("Notifying LogonUI to clear the password field");
@@ -311,70 +251,35 @@ impl UDSCredential {
             pcpcs as *const _
         );
 
-        // Store LSA strings and ensure they live long enough
-        let cred_guard = self.credential.read().unwrap();
-        let username = cred_guard.username.clone();
-        let password = String::from_utf8_lossy(&cred_guard.password.clone()).into_owned();
-        let domain = cred_guard.domain.clone();
-        drop(cred_guard); // Release the lock
-
-        // If username is set, our injected credential is used
-        let (username, domain, password) = if username.is_empty() {
-            let values_guard = self.values.read().unwrap();
-            let values_username = values_guard[UdsFieldId::Username as usize].clone();
-            let values_password = values_guard[UdsFieldId::Password as usize].clone();
-            debug_dev!(
-                "Values received - Username: '{}', Domain: '', Password length: {}",
-                values_username,
-                values_password.len()
-            );
-            // Infer the domain from username, looking for @ or \\
-            let (values_username, values_domain) =
-                if let Some(slash_pos) = values_username.rfind('\\') {
-                    if slash_pos > 0 {
-                        (
-                            values_username[slash_pos + 1..].to_string(),
-                            values_username[0..slash_pos].to_string(),
-                        )
-                    } else {
-                        (String::new(), values_username)
-                    }
-                } else if let Some(at_pos) = values_username.rfind('@') {
-                    if at_pos > 0 {
-                        (
-                            values_username[..at_pos].to_string(),
-                            values_username[at_pos + 1..].to_string(),
-                        )
-                    } else {
-                        (String::new(), String::new())
-                    }
-                } else {
-                    (values_username, String::new())
-                };
-
-            let values_password = if values_username.is_empty() && !values_password.is_empty() {
-                warn!("Username is empty but password is set, ignoring password");
-                String::new()
+        // Our first option is use the credential received into cred
+        let cred = self.credential();
+        let cred = if !cred.is_valid() {
+            // Second, is use the credential from the filter, that is OUR credential
+            // (already has been filtered)
+            if let Some(filter_credential) = UDSCredentialsFilter::get_received_credential() {
+                filter_credential
             } else {
-                values_password
-            };
-            (values_username, values_domain, values_password)
+                cred
+            }
         } else {
-            (username, domain, password)
+            cred
         };
 
-        let domain = if domain.is_empty() {
-            crate::utils::helpers::get_computer_name()
+        // If no valid credentials, fallback to interactive
+        let (username, password, domain) = if !cred.is_valid() {
+            let values_guard = self.values.read().unwrap();
+            let (username, domain) = helpers::split_username_domain(
+                &values_guard[UdsFieldId::Username as usize].clone(),
+            );
+            let password = values_guard[UdsFieldId::Password as usize].clone();
+            (username, password, domain)
         } else {
-            domain
+            // We have valid credentials from the filter or SetToken
+            let username = cred.token.clone();
+            let password = cred.key.clone();
+            let domain = String::new(); // Domain is ignored
+            (username, password, domain)
         };
-
-        debug_dev!(
-            "Credentials to be used - Username: '{}', Domain: '{}', Password length: {}",
-            username,
-            domain,
-            password.len()
-        );
 
         let lsa_username = lsa::LsaUnicodeString::new(&username);
         let lsa_password = lsa::LsaUnicodeString::new(&password);
@@ -447,8 +352,6 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // We do not heed any special here, Just inform to not autologon
     fn SetSelected(&self) -> windows::core::Result<BOOL> {
         debug_flow!("ICredentialProviderCredential::SetSelected");
-        // If we have an username, copy it to values
-        self.update_value_from_username();
 
         // true --> Focus on our main credential field
         // false --> do not focus

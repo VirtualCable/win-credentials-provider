@@ -25,6 +25,7 @@ use windows::{
 use zeroize::Zeroize;
 
 use crate::{
+    broker,
     credentials::{filter::UDSCredentialsFilter, types},
     debug_dev, debug_flow,
     globals::{self, CLSID_UDS_CREDENTIAL_PROVIDER},
@@ -90,7 +91,7 @@ impl UDSCredential {
         self.credential.read().unwrap().key.clone()
     }
 
-    pub fn set_credentials_values(&self, username: &str, password: &str, domain: &str) {
+    pub fn set_values(&self, username: &str, password: &str, domain: &str) {
         self.values.write().unwrap()[UdsFieldId::Username as usize] =
             helpers::username_with_domain(username, domain);
         self.values.write().unwrap()[UdsFieldId::Password as usize] = password.to_string();
@@ -134,7 +135,7 @@ impl UDSCredential {
         Ok(())
     }
 
-    fn clear_password_value(&self) -> windows::core::Result<()> {
+    fn clear_password(&self) -> windows::core::Result<()> {
         debug_dev!("Clearing password field");
 
         let mut values_guard: std::sync::RwLockWriteGuard<'_, Vec<String>> =
@@ -255,7 +256,8 @@ impl UDSCredential {
         let cred = self.credential();
         let cred = if !cred.is_valid() {
             // Second, is use the credential from the filter, that is OUR credential
-            // (already has been filtered)
+            // This credential has been alread filtered, so it's valid and ours.
+            // The get_received_credential cleans the filter credential
             if let Some(filter_credential) = UDSCredentialsFilter::get_received_credential() {
                 filter_credential
             } else {
@@ -274,11 +276,10 @@ impl UDSCredential {
             let password = values_guard[UdsFieldId::Password as usize].clone();
             (username, password, domain)
         } else {
-            // We have valid credentials from the filter or SetToken
-            let username = cred.token.clone();
-            let password = cred.key.clone();
-            let domain = String::new(); // Domain is ignored
-            (username, password, domain)
+            // Get from broker or fail, because are our credentials and must be valid
+            let response = broker::get_credentials_from_broker(&cred.token, &cred.key)?;
+
+            (response.0, response.1, response.2)
         };
 
         let lsa_username = lsa::LsaUnicodeString::new(&username);
@@ -363,7 +364,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     fn SetDeselected(&self) -> windows::core::Result<()> {
         debug_flow!("ICredentialProviderCredential::SetDeselected");
         // If values[<index>] is the password field, clear it
-        self.clear_password_value()
+        self.clear_password()
     }
 
     /// Retrieves the state of a field.

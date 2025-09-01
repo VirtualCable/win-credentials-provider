@@ -1,6 +1,9 @@
 use super::*;
 
-use crate::utils::{log::setup_logging, traits::To};
+use crate::{
+    test_utils,
+    utils::{log::setup_logging, traits::To},
+};
 
 #[test]
 fn test_uds_credential_new() {
@@ -26,7 +29,7 @@ fn test_password_clean() {
     setup_logging("debug");
     let credential = UDSCredential::new();
     credential.values.write().unwrap()[UdsFieldId::Password as usize] = "test".to_string();
-    credential.clear_password_value().unwrap();
+    credential.clear_password().unwrap();
     let values = credential.values.read().unwrap();
 
     assert_eq!(values[UdsFieldId::Password as usize], "");
@@ -76,25 +79,75 @@ fn test_set_string_value() {
     }
 }
 
+enum SerializeTestMode {
+    Broker,
+    Values,
+    Filter,
+}
+
+#[test]
+#[serial_test::serial(broker)]
+fn test_serialization_logon_with_values() {
+    do_test_serialization_logon("username", "password", "domain", SerializeTestMode::Values)
+        .unwrap();
+}
+
+#[test]
+#[serial_test::serial(broker)]
+fn test_serialization_logon_with_broker() {
+    do_test_serialization_logon(
+        test_utils::TEST_BROKER_CREDENTIAL,
+        test_utils::TEST_ENCRYPTION_KEY,
+        "not_used",
+        SerializeTestMode::Broker,
+    )
+    .unwrap();
+}
+
+#[test]
+#[serial_test::serial(broker)]
+fn test_serialization_logon_with_filter() {
+    do_test_serialization_logon(
+        test_utils::TEST_BROKER_CREDENTIAL,
+        test_utils::TEST_ENCRYPTION_KEY,
+        "not_used",
+        SerializeTestMode::Filter,
+    )
+    .unwrap();
+}
+
 #[allow(dead_code)]
 fn do_test_serialization_logon(
     token_or_username: &str,
     key_or_password: &str,
     domain: &str,
-    on_values: bool,
+    mode: SerializeTestMode,
 ) -> Result<()> {
     setup_logging("debug");
+
+    // On new, all fields are empty
     let credential = UDSCredential::new();
-    if !on_values {
-        let mut cred = credential.credential.write().unwrap();
-        cred.token = token_or_username.to_string();
-        cred.key = key_or_password.to_string();
-        // TODO: We need a mockito here to return real values
-    } else {
-        let mut values_guard = credential.values.write().unwrap();
-        values_guard[UdsFieldId::Username as usize] =
-            helpers::username_with_domain(token_or_username, domain);
-        values_guard[UdsFieldId::Password as usize] = key_or_password.to_string();
+
+    // Create a fake broker, so the call to get credentials from broker does not fail
+    // when testing the serialization
+    let (_url, _server, mock) = crate::test_utils::create_fake_broker();
+
+    match mode {
+        SerializeTestMode::Broker => {
+            let mut cred = credential.credential.write().unwrap();
+            cred.token = token_or_username.to_string();
+            cred.key = key_or_password.to_string();
+        }
+        SerializeTestMode::Values => {
+            let mut values_guard = credential.values.write().unwrap();
+            values_guard[UdsFieldId::Username as usize] =
+                helpers::username_with_domain(token_or_username, domain);
+            values_guard[UdsFieldId::Password as usize] = key_or_password.to_string();
+        }
+        SerializeTestMode::Filter => {
+            let cred = types::Credential::with_credentials(token_or_username, key_or_password);
+            UDSCredentialsFilter::set_received_credential(Some(cred));
+        }
     }
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
     let mut pcpcs = CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
@@ -115,12 +168,23 @@ fn do_test_serialization_logon(
     let unserial =
         unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_unpack_in_place(base) };
 
-    let _recv_username = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
-    let _recv_password = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
-    let _recv_domain =
-        crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
+    let _recv_username = lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
+    let _recv_password = lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
+    let _recv_domain = lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
 
-    // TODO: Check real data, depending on username or token
+    match mode {
+        SerializeTestMode::Broker | SerializeTestMode::Filter => {
+            assert_eq!(_recv_username, test_utils::VALID_CREDS.0);
+            assert_eq!(_recv_password, test_utils::VALID_CREDS.1);
+            assert_eq!(_recv_domain, test_utils::VALID_CREDS.2);
+            mock.assert();
+        }
+        SerializeTestMode::Values => {
+            assert_eq!(_recv_username, token_or_username);
+            assert_eq!(_recv_password, key_or_password);
+            assert_eq!(_recv_domain, domain);
+        }
+    }
 
     Ok(())
 }

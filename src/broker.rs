@@ -119,16 +119,16 @@ mod tests {
     #[test]
     fn test_is_broker_credential() {
         log::setup_logging("debug");
-        assert!(get_broker_credential(utils::VALID_BROKER_CREDENTIAL).is_some());
+        assert!(get_broker_credential(utils::TEST_BROKER_CREDENTIAL).is_some());
         assert!(get_broker_credential("uds-short").is_none());
         assert!(get_broker_credential("not_a_broker_credential").is_none());
     }
 
     #[test]
-    #[serial_test::serial(broker_info)]
+    #[serial_test::serial(broker)]
     fn test_get_credentials_from_broker_valid_info() {
         let (_url, _server, mock) = utils::create_fake_broker();
-        let result = get_credentials_from_broker("token", utils::TEST_ENCRYPTION_KEY);
+        let result = get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
         assert!(result.is_ok());
 
         // Check the returned values
@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial(broker_info)]
+    #[serial_test::serial(broker)]
     fn test_get_credentials_from_broker_no_info() {
         log::setup_logging("debug");
         globals::set_broker_info("", false);

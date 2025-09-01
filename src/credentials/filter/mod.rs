@@ -43,7 +43,7 @@ impl UDSCredentialsFilter {
     }
 
     pub fn set_received_credential(cred: Option<types::Credential>) {
-        let mut recv_guard = RECV_CRED.write().unwrap();
+        let mut recv_guard: std::sync::RwLockWriteGuard<'_, Option<types::Credential>> = RECV_CRED.write().unwrap();
         *recv_guard = cred;
     }
 }

@@ -8,13 +8,11 @@ use crate::{
 };
 
 pub const BROKER_CREDENTIAL_PREFIX: &str = "uds:"; // Broker credential prefix
-pub const BROKER_CREDENTIAL_SIZE: usize = 48; // Broker credential size
+pub const BROKER_CREDENTIAL_SIZE: usize = 4 + 48 + 32; // Broker credential size, "uds:" + ticket(48) + key(32)
 
 /// Returns true if the credential is for the broker
-pub fn is_broker_credential(token: &str, scrambler: &str) -> bool {
-    token.starts_with(BROKER_CREDENTIAL_PREFIX)
-        && token.len() == BROKER_CREDENTIAL_SIZE
-        && scrambler.len() == BROKER_CREDENTIAL_SIZE
+pub fn is_broker_credential(token: &str) -> bool {
+    token.starts_with(BROKER_CREDENTIAL_PREFIX) && token.len() == BROKER_CREDENTIAL_SIZE
 }
 
 /// Obtains the Username, password, and domain from broker with provided data
@@ -96,12 +94,10 @@ mod tests {
     fn test_is_broker_credential() {
         log::setup_logging("debug");
         assert!(is_broker_credential(
-            "uds:12345678901234567890123456789012345678901234",
-            "123456789012345678901234567890123456789012345678"
+            "uds:12345678901234567890123456789012345678901234567812345678901234567890123456789012",
         ));
-        assert!(!is_broker_credential("uds:short", "uds:short"));
+        assert!(!is_broker_credential("uds:short"));
         assert!(!is_broker_credential(
-            "not_a_broker_credential",
             "not_a_broker_credential"
         ));
     }

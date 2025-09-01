@@ -7,12 +7,14 @@ use std::sync::{
 use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_NOTIMPL},
+        Storage::EnhancedStorage::PKEY_Identity_UserName,
         UI::Shell::{
             CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_PLAP, CPUS_UNLOCK_WORKSTATION,
             CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
             CREDENTIAL_PROVIDER_NO_DEFAULT, CREDENTIAL_PROVIDER_USAGE_SCENARIO,
             ICredentialProvider, ICredentialProvider_Impl, ICredentialProviderCredential,
-            ICredentialProviderEvents,
+            ICredentialProviderEvents, ICredentialProviderSetUserArray,
+            ICredentialProviderSetUserArray_Impl, ICredentialProviderUserArray,
         },
     },
     core::*,
@@ -21,9 +23,12 @@ use windows::{
 use zeroize::Zeroize;
 
 use crate::{
-    credentials::credential::UDSCredential,
+    credentials::{credential::UDSCredential, filter::UDSCredentialsFilter},
     debug_flow,
-    utils::{log, log::error, lsa},
+    utils::{
+        log::{self, error},
+        lsa,
+    },
 };
 use crate::{debug_dev, globals};
 
@@ -34,7 +39,7 @@ use std::sync::OnceLock;
 #[cfg(test)]
 static ASYNC_CREDS_HANDLE: OnceLock<RwLock<Option<std::thread::JoinHandle<()>>>> = OnceLock::new();
 
-#[implement(ICredentialProvider)]
+#[implement(ICredentialProvider, ICredentialProviderSetUserArray)]
 #[derive(Clone)]
 pub struct UDSCredentialsProvider {
     credential: Arc<RwLock<UDSCredential>>,
@@ -168,7 +173,7 @@ impl UDSCredentialsProvider {
             let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
             let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
-            if !crate::broker::is_broker_credential(&username, &password) {
+            if !crate::broker::is_broker_credential(&username) {
                 return Err(E_INVALIDARG.into());
             }
 
@@ -253,6 +258,7 @@ impl UDSCredentialsProvider {
         // If not, we allow interactive logon
         let is_rdp = crate::utils::helpers::is_rdp_session();
         let has_valid_creds = self.credential.read().unwrap().is_ready();
+        let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(
             "get_credential_count called. is_rdp: {} has_creds: {}",
@@ -262,11 +268,13 @@ impl UDSCredentialsProvider {
 
         let pdwcount = 1; // If 0, our provider will not be shown
 
-        let (pwdefault, pwautologonwithdefault) = if is_rdp && has_valid_creds {
-            (0, true.into())
-        } else {
-            (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-        };
+        // If is rdp and either has valid creds or have received creds
+        let (pwdefault, pwautologonwithdefault) =
+            if is_rdp && (has_valid_creds || have_received_creds) {
+                (0, true.into())
+            } else {
+                (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+            };
         Ok((pdwcount, pwdefault, pwautologonwithdefault))
     }
 
@@ -373,6 +381,50 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
         debug_flow!("ICredentialProvider::GetCredentialAt");
         self.get_credential_at(dwindex)
+    }
+}
+
+impl ICredentialProviderSetUserArray_Impl for UDSCredentialsProvider_Impl {
+    fn SetUserArray(
+        &self,
+        users: windows_core::Ref<'_, ICredentialProviderUserArray>,
+    ) -> windows_core::Result<()> {
+        debug_flow!("ICredentialProviderSetUserArray::SetUserArray");
+
+        let users = users.unwrap();
+        debug_dev!("Number of users present in the user array: {}", unsafe {
+            users.GetCount()?
+        });
+
+        let user_count = unsafe { users.GetCount()? };
+        for i in 0..user_count {
+            debug_dev!("User {} present in the user array", i);
+            let user = unsafe { users.GetAt(i) };
+            if let Ok(usr) = user {
+                let username = unsafe {
+                    if let Ok(value) = usr.GetStringValue(&PKEY_Identity_UserName) {
+                        let username = value.to_string().unwrap_or_default();
+
+                        debug_dev!("User detected:: {}", username);
+
+                        Some(username)
+                    } else {
+                        None
+                    }
+                };
+
+                debug_dev!("User {} has username: {:?}", i, username);
+            }
+
+            // if let Some(username) = username {
+            //     // Set the username in our credential
+            //     self.credential
+            //         .write()
+            //         .unwrap()
+            //         .set_username_value(&username);
+            // }
+        }
+        Ok(())
     }
 }
 

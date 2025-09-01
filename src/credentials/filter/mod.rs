@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_NOTIMPL},
@@ -11,9 +13,12 @@ use windows::{
 };
 
 use crate::{
+    credentials::types,
     debug_dev, debug_flow,
     utils::{helpers, lsa},
 };
+
+static RECV_CRED: RwLock<Option<types::Credential>> = RwLock::new(None);
 
 #[implement(ICredentialProviderFilter)]
 pub struct UDSCredentialsFilter {}
@@ -22,6 +27,24 @@ impl UDSCredentialsFilter {
     pub fn new() -> Self {
         debug_flow!("UDSCredentialsFilter::new");
         Self {}
+    }
+
+    /// Gets and consumes the received credential
+    pub fn get_received_credential() -> Option<types::Credential> {
+        let mut recv_guard = RECV_CRED.write().unwrap();
+        let cred = recv_guard.take();
+        cred.clone()
+    }
+
+    // Check if we have received a credential, but do not consume it
+    pub fn has_received_credential() -> bool {
+        let recv_guard = RECV_CRED.read().unwrap();
+        recv_guard.is_some()
+    }
+
+    pub fn set_received_credential(cred: Option<types::Credential>) {
+        let mut recv_guard = RECV_CRED.write().unwrap();
+        *recv_guard = cred;
     }
 }
 
@@ -45,7 +68,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         debug_flow!("ICredentialProviderFilter::Filter");
         let is_rdp = helpers::is_rdp_session();
 
-        debug_dev!("Filter called. is_rdp: {} {}", is_rdp, dwflags);
+        debug_dev!("Filter called. is_rdp: {} {} {:?}", is_rdp, dwflags, cpus);
 
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
@@ -116,6 +139,11 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
                     password,
                     domain
                 );
+                if crate::broker::is_broker_credential(&username) {
+                    UDSCredentialsFilter::set_received_credential(Some(
+                        types::Credential::with_credentials(&username, &password, &domain),
+                    ));
+                }
             }
         }
 

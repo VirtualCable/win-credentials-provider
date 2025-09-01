@@ -17,7 +17,7 @@ use windows::{
                 CREDENTIAL_PROVIDER_USAGE_SCENARIO, ICredentialProviderCredential,
                 ICredentialProviderCredential_Impl, ICredentialProviderCredentialEvents,
             },
-            WindowsAndMessaging::{IMAGE_BITMAP, LR_CREATEDIBSECTION, LR_DEFAULTCOLOR, LoadImageW},
+            WindowsAndMessaging::{IMAGE_BITMAP, LR_CREATEDIBSECTION, LoadImageW},
         },
     },
     core::*,
@@ -32,16 +32,11 @@ use crate::{
         log::{debug, error, info, warn},
         lsa,
     },
+    credentials::types,
 };
 
 use super::{fields::CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS, types::UdsFieldId};
 
-#[derive(Debug, Clone)]
-struct Creds {
-    username: String,
-    password: Zeroizing<Vec<u8>>,
-    domain: String,
-}
 
 #[allow(dead_code)]
 #[implement(ICredentialProviderCredential)]
@@ -49,7 +44,7 @@ struct Creds {
 pub struct UDSCredential {
     cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
     values: Arc<RwLock<Vec<String>>>, // Array containing the values of the fields
-    credential: Arc<RwLock<Creds>>,   // Actual credentials
+    credential: Arc<RwLock<types::Credential>>,   // Actual credentials
     cookie: Arc<RwLock<Option<u32>>>,
 }
 
@@ -69,7 +64,7 @@ impl UDSCredential {
                 String::new();
                 UdsFieldId::NumFields as usize
             ])),
-            credential: Arc::new(RwLock::new(Creds {
+            credential: Arc::new(RwLock::new(types::Credential {
                 username: String::new(),
                 password: Zeroizing::new(Vec::new()),
                 domain: String::new(),
@@ -112,6 +107,12 @@ impl UDSCredential {
             })
             .collect();
     }
+
+    
+    pub fn set_username_value(&self, username: &str) {
+        self.values.write().unwrap()[UdsFieldId::Username as usize] = username.to_string();
+    }
+
 
     /// Returns true if the credential is ready to be used
     pub fn is_ready(&self) -> bool {
@@ -283,7 +284,7 @@ impl UDSCredential {
                     IMAGE_BITMAP,
                     0,
                     0,
-                    LR_CREATEDIBSECTION | LR_DEFAULTCOLOR,
+                    LR_CREATEDIBSECTION,
                 )
                 .map(|hbmp_handle| HBITMAP(hbmp_handle.0))
             }

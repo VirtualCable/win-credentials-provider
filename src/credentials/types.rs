@@ -7,6 +7,7 @@ use windows::Win32::{
     },
 };
 use windows::core::{GUID, PWSTR};
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone)]
 pub struct CredentialFieldDescriptor {
@@ -66,10 +67,8 @@ impl CredentialFieldDescriptor {
     pub fn is_submit_button(&self) -> bool {
         self.field_type == windows::Win32::UI::Shell::CPFT_SUBMIT_BUTTON
     }
-
 }
 
-#[allow(dead_code)]
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum UdsFieldId {
@@ -78,6 +77,31 @@ pub enum UdsFieldId {
     Password,
     SubmitButton,
     NumFields, // Note: if new fields are added, keep NumFields last.  This is used as a count of the number of fields
+}
+
+#[derive(Debug, Clone)]
+pub struct Credential {
+    pub username: String,
+    pub password: Zeroizing<Vec<u8>>,
+    pub domain: String,
+}
+
+impl Credential {
+    pub fn new(username: String, password: Zeroizing<Vec<u8>>, domain: String) -> Self {
+        Self {
+            username,
+            password,
+            domain,
+        }
+    }
+
+    pub fn with_credentials(username: &str, password: &str, domain: &str) -> Self {
+        Self {
+            username: username.to_string(),
+            password: Zeroizing::new(password.as_bytes().to_vec()),
+            domain: domain.to_string(),
+        }
+    }
 }
 
 #[cfg(test)]

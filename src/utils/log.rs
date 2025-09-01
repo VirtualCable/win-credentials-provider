@@ -23,8 +23,11 @@ pub fn output_debug_string(s: &str) {
 }
 
 pub fn setup_logging(level: &str) {
-    // if UDSCP_DEBUG is on env, use it intead of level
-    let level = std::env::var("UDSCP_DEBUG").unwrap_or_else(|_| level.to_string());
+    // if UDSCP_LOG_LEVEL is on env, use it intead of level
+    let level = std::env::var("UDSCP_LOG_LEVEL").unwrap_or_else(|_| level.to_string());
+    let log_path = std::env::var("UDSCP_LOG_PATH").unwrap_or_else(|_| {
+        std::env::temp_dir().to_string_lossy().into()
+    });
 
     // Bridge log crate logs to tracing
     LOGGER_INIT.get_or_init(|| {
@@ -32,7 +35,7 @@ pub fn setup_logging(level: &str) {
         let main_file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(std::env::temp_dir().join("uds-cred-prov.log"))
+            .open(std::path::Path::new(&log_path).join("uds-cred-prov.log"))
             .expect("Failed to open main log file");
 
         let main_layer = fmt::layer()
@@ -54,7 +57,7 @@ pub fn setup_logging(level: &str) {
                     OpenOptions::new()
                         .create(true)
                         .append(true)
-                        .open(std::env::temp_dir().join("uds-cred-prov-flow.log"))
+                        .open(std::path::Path::new(&log_path).join("uds-cred-prov-flow.log"))
                         .expect("Failed to open flow log file"),
                 )
                 .with_ansi(false)
@@ -74,6 +77,8 @@ pub fn setup_logging(level: &str) {
                 .try_init()
                 .ok();
         }
+
+        info!("Logging initialized with level: {}", level);
     });
 }
 

@@ -263,7 +263,8 @@ impl UDSCredential {
             if descriptor.is_text_field() {
                 let new_value = crate::utils::com::pcwstr_to_string(*psz);
                 debug_dev!("New value: {}", new_value);
-                self.values.write().unwrap()[field_id as usize] = new_value;
+                self.values.write().unwrap()[field_id as usize] = new_value.clone();
+                debug_assert!(self.values.read().unwrap()[field_id as usize] == new_value);
                 return Ok(());
             } else {
                 debug_dev!("Field is not a text field");
@@ -321,6 +322,11 @@ impl UDSCredential {
             let values_guard = self.values.read().unwrap();
             let values_username = values_guard[UdsFieldId::Username as usize].clone();
             let values_password = values_guard[UdsFieldId::Password as usize].clone();
+            debug_dev!(
+                "Values received - Username: '{}', Domain: '', Password length: {}",
+                values_username,
+                values_password.len()
+            );
             // Infer the domain from username, looking for @ or \\
             let (values_username, values_domain) =
                 if let Some(slash_pos) = values_username.rfind('\\') {
@@ -342,7 +348,7 @@ impl UDSCredential {
                         (String::new(), String::new())
                     }
                 } else {
-                    (String::new(), String::new())
+                    (values_username, String::new())
                 };
 
             let values_domain = if values_domain.is_empty() {

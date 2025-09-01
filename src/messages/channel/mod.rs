@@ -11,7 +11,10 @@ use windows::core::PCWSTR;
 use crate::debug_dev;
 
 use crate::messages::{auth::AuthRequest, consts};
-use crate::utils::{safe::SafeHandle, log::error};
+use crate::utils::{
+    log::{debug, error},
+    safe::SafeHandle,
+};
 
 impl AuthRequest {
     pub fn validate(&self) -> Result<()> {
@@ -169,8 +172,6 @@ impl ChannelServer {
             )
         };
 
-        debug_dev!("Read message length: {:?}, res: {:?}", &len_buf[..], res);
-
         match res {
             Ok(_) => {
                 if read != 4 {
@@ -207,7 +208,6 @@ impl ChannelServer {
                 }
                 // if error, can be ERROR_PIPE_LISTENING (536) --> Other side not connected, so we cannot read
                 if matches!(code, 233 | 536) {
-                    debug_dev!("No data to read or pipe not connected: {}", code);
                     return Ok(None); // No data to read
                 }
                 return Err(anyhow::anyhow!("Failed to read message"));
@@ -312,7 +312,7 @@ impl Drop for ChannelServer {
     fn drop(&mut self) {
         // Not really needed, but better safe than sorry :)
         if self.pipe_handle.is_valid() {
-            debug_dev!("Dropping ChannelServer, cleaning up resources");
+            debug!("Dropping ChannelServer, cleaning up resources");
             self.pipe_handle.clear(); // Early drop
         }
     }

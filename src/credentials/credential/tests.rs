@@ -106,14 +106,23 @@ fn test_set_string_value() {
 }
 
 #[test]
-fn test_serialization_logon() {
+fn test_serialization_logon_user_pas_dom() -> Result<()> {
+    do_test_serialization_logon("testuser", "testpassword", "testdomain")
+}
+
+#[test]
+fn test_serialization_logon_user_pas_nodom() -> Result<()> {
+    do_test_serialization_logon("testuser", "testpassword", "")
+}
+
+fn do_test_serialization_logon(username: &str, password: &str, domain: &str) -> Result<()> {
     setup_logging("debug");
     let credential = UDSCredential::new();
     {
         let mut cred = credential.credential.write().unwrap();
-        cred.username = "testuser".to_string();
-        cred.password = Zeroizing::new("testpassword".as_bytes().to_vec());
-        cred.domain = "testdomain".to_string();
+        cred.username = username.to_string();
+        cred.password = Zeroizing::new(password.as_bytes().to_vec());
+        cred.domain = domain.to_string();
     }
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
     let mut pcpcs = CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
@@ -131,13 +140,15 @@ fn test_serialization_logon() {
     let base = pcpcs.rgbSerialization;
 
     // Deseralize data again and see that all is fine
-    let unserial = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_unpack_in_place(base) };
+    let unserial =
+        unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_unpack_in_place(base) };
 
-    let username = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
-    let password = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
-    let domain = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
+    let recv_username = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.UserName);
+    let recv_password = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.Password);
+    let recv_domain = crate::utils::lsa::lsa_unicode_string_to_string(&unserial.Logon.LogonDomainName);
 
-    assert_eq!(username, "testuser");
-    assert_eq!(password, "testpassword");
-    assert_eq!(domain, "testdomain");
+    assert_eq!(recv_username, username);
+    assert_eq!(recv_password, password);
+    assert_eq!(recv_domain, domain);
+    Ok(())
 }

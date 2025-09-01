@@ -2,7 +2,6 @@ use std::sync::atomic::Ordering;
 
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, HINSTANCE, S_FALSE, S_OK};
 use windows::Win32::System::Com::IClassFactory;
-use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
 use windows::Win32::System::LibraryLoader::DisableThreadLibraryCalls;
 use windows::Win32::System::SystemServices::{
     DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_ATTACH, DLL_THREAD_DETACH,
@@ -15,8 +14,6 @@ pub extern "system" fn DllMain(
     fdw_reason: u32,
     _lp_reserved: *mut core::ffi::c_void,
 ) -> BOOL {
-unsafe {
-    debug_dev!("Entering DllMain");
     // Store the instance for later retrieval
     globals::set_instance(hinst_dll);
     unsafe {
@@ -24,10 +21,9 @@ unsafe {
             DLL_PROCESS_ATTACH => {
                 let _ = DisableThreadLibraryCalls(hinst_dll.into());
                 utils::log::setup_logging("info");
-                debug_dev!("DLL_PROCESS_ATTACH");
             }
             DLL_PROCESS_DETACH => {
-                // No Cleanup needed right now
+                // Limpieza si aplica
             }
             DLL_THREAD_ATTACH => {}
             DLL_THREAD_DETACH => {}

@@ -15,7 +15,7 @@ use windows::{
 use crate::{
     credentials::types,
     debug_dev, debug_flow,
-    utils::{helpers, lsa},
+    utils::{lsa},
 };
 
 static RECV_CRED: RwLock<Option<types::Credential>> = RwLock::new(None);
@@ -56,7 +56,8 @@ impl UDSCredentialsFilter {
         rgballow: *mut windows::core::BOOL,
         cproviders: u32,
     ) -> windows::core::Result<()> {
-        let is_rdp = helpers::is_rdp_session();
+        // If we come from a remote session, and we have a valid UDS credential 
+        let is_rdp = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!("Filter called. is_rdp: {} {} {:?}", is_rdp, dwflags, cpus);
 
@@ -120,7 +121,7 @@ impl UDSCredentialsFilter {
                     password,
                     domain
                 );
-                if let Some((ticket, key)) = crate::broker::get_broker_credential(&username) {
+                if let Some((ticket, key)) = crate::broker::transform_broker_credential(&username) {
                     UDSCredentialsFilter::set_received_credential(Some(
                         types::Credential::with_credentials(&ticket, &key),
                     ));
@@ -159,10 +160,9 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        // Note that we could use this to return a Credential Serialization from Here
-        // Maybe this way, we could provide with credentials on an early stage if needed
-        // Currently, to allow more flows, we will store and process it on our Credential Provider
-        // But this is something to take into account...
+        // After some tests, the data obtanined from this will be provided to the selected Credential Provider
+        // We can simply return transformer credential here, an treat them on our Provider SetSerialzation
+        // But the result will be the same.
         debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential");
 
         self.update_remote_credential(pcpcsin, pcpcsout)

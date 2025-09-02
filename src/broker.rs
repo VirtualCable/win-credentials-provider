@@ -14,7 +14,7 @@ pub const BROKER_CREDENTIAL_PREFIX: &str = "uds-"; // Broker credential prefix
 pub const BROKER_CREDENTIAL_SIZE: usize = 4 + 48 + 32; // Broker credential size, "uds-" + ticket(48) + key(32)
 
 /// Returns true if the credential is for the broker
-pub fn get_broker_credential(token: &str) -> Option<(String, String)> {
+pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
     if token.starts_with(BROKER_CREDENTIAL_PREFIX) && token.len() == BROKER_CREDENTIAL_SIZE {
         let ticket = &token[4..52];
         let key = &token[52..84];
@@ -119,9 +119,9 @@ mod tests {
     #[test]
     fn test_is_broker_credential() {
         log::setup_logging("debug");
-        assert!(get_broker_credential(utils::TEST_BROKER_CREDENTIAL).is_some());
-        assert!(get_broker_credential("uds-short").is_none());
-        assert!(get_broker_credential("not_a_broker_credential").is_none());
+        assert!(transform_broker_credential(utils::TEST_BROKER_CREDENTIAL).is_some());
+        assert!(transform_broker_credential("uds-short").is_none());
+        assert!(transform_broker_credential("not_a_broker_credential").is_none());
     }
 
     #[test]

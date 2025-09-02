@@ -29,7 +29,7 @@ impl AuthRequest {
         if self.broker_credential.is_empty() {
             return Err(anyhow::anyhow!("Boker credential"));
         }
-        if crate::broker::get_broker_credential(&self.broker_credential).is_none() {
+        if crate::broker::transform_broker_credential(&self.broker_credential).is_none() {
             return Err(anyhow::anyhow!("Invalid broker credential format"));
         }
         Ok(())

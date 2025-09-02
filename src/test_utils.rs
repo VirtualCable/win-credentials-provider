@@ -14,7 +14,16 @@ pub const TEST_BROKER_CREDENTIAL: &str =
 //                                                       ^ Here starts the key
 pub const VALID_RESPONSE: &str = r#"{"username":"+KpcZ2rcHgyH8HZ4vFBVkEj9bPQV/oRZ","password":"vZ7eWdcfrbXD4YeIK06q3P3o671Zvkz8","domain":"oRxh6xISQjUhpE8DKwF9Nen28rSdMg=="}"#;
 pub const VALID_CREDS: (&str, &str, &str) = ("username", "password", "domain"); // Credentials encripted with TEST_ENCRYPTION_KEY on VALID_RESPONSE
+pub const TEST_BROKER_TOKEN: &str = "uds-123456789012345678901234567890123456789012345678";
 pub const TEST_ENCRYPTION_KEY: &str = "12345678901234567890123456789012"; // Must match the TEST_BROKER_CREDENTIAL
+
+pub const UDS_ACTOR_CONFIG_B64: &str =
+    concat!(
+        "eyJob3N0IjogIiIsICJjaGVja19jZXJ0aWZpY2F0ZSI6IGZhbHNlLCAiYWN0b3JfdHlw",
+        "ZSI6IG51bGwsICJtYXN0ZXJfdG9rZW4iOiBudWxsLCAib3duX3Rva2VuIjogIjEyMzQ1NiIsICJyZXN0cmljdF9uZXQiOiBudW",
+        "xsLCAicHJlX2NvbW1hbmQiOiBudWxsLCAicnVub25jZV9jb21tYW5kIjogbnVsbCwgInBvc3RfY29tbWFuZCI6IG51bGwsICJs",
+        "b2dfbGV2ZWwiOiAyLCAiY29uZmlnIjogbnVsbCwgImRhdGEiOiBudWxsfQ=="
+    );
 
 /// Creates a Fake broker:
 /// Note: Keep at least server alive, as long as you need to use the mock

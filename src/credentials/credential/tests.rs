@@ -83,14 +83,14 @@ enum SerializeTestMode {
 }
 
 #[test]
-#[serial_test::serial(broker)]
+#[serial_test::serial(broker, rdp)]
 fn test_serialization_logon_with_values() {
     do_test_serialization_logon("username", "password", "domain", SerializeTestMode::Values)
         .unwrap();
 }
 
 #[test]
-#[serial_test::serial(broker)]
+#[serial_test::serial(broker, rdp)]
 fn test_serialization_logon_with_broker() {
     do_test_serialization_logon(
         test_utils::TEST_BROKER_CREDENTIAL,
@@ -102,7 +102,7 @@ fn test_serialization_logon_with_broker() {
 }
 
 #[test]
-#[serial_test::serial(broker)]
+#[serial_test::serial(broker, rdp)]
 fn test_serialization_logon_with_filter() {
     do_test_serialization_logon(
         test_utils::TEST_BROKER_CREDENTIAL,

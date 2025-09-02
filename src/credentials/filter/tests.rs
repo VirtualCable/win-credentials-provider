@@ -1,6 +1,9 @@
 use super::*;
 
-use crate::{globals, test_utils};
+use crate::{
+    globals,
+    test_utils::{self, TEST_BROKER_TOKEN, TEST_ENCRYPTION_KEY},
+};
 
 #[test]
 fn test_uds_credentials_filter_credentials() -> Result<()> {
@@ -91,10 +94,13 @@ fn test_uds_credential_filter_no_rdp() -> Result<()> {
 #[serial_test::serial(rdp)]
 fn test_uds_credential_filter_rdp() -> Result<()> {
     crate::utils::log::setup_logging("debug");
-    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
-    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
 
     let filter = UDSCredentialsFilter::new();
+
+    UDSCredentialsFilter::set_received_credential(Some(types::Credential::with_credentials(
+        TEST_BROKER_TOKEN,
+        TEST_ENCRYPTION_KEY,
+    )));
 
     let list_of_clids: Vec<GUID> = (0..10)
         .map(GUID::from_u128)
@@ -137,9 +143,6 @@ fn test_uds_credential_filter_rdp() -> Result<()> {
             }
         }
     }
-
-    // Reset the environment variable
-    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
 
     Ok(())
 }

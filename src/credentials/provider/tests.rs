@@ -4,7 +4,10 @@ use windows::Win32::UI::Shell::ICredentialProviderEvents_Impl;
 
 use super::*;
 
-use crate::{credentials::filter, utils::{com::ComInitializer, log::setup_logging}};
+use crate::{
+    credentials::filter,
+    utils::{com::ComInitializer, log::setup_logging},
+};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
@@ -305,9 +308,6 @@ fn test_get_field_descriptor_at() -> Result<()> {
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_with_creds() -> Result<()> {
-    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
-    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
-
     let provider = create_provider();
     provider
         .credential
@@ -317,16 +317,12 @@ fn test_get_credential_count_with_creds() -> Result<()> {
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
-    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
 
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_with_filter_creds() -> Result<()> {
-    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
-    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
-
     let provider = create_provider();
     crate::credentials::filter::UDSCredentialsFilter::set_received_credential(Some(
         crate::credentials::types::Credential::with_credentials("token", "key"),
@@ -334,16 +330,12 @@ fn test_get_credential_count_with_filter_creds() -> Result<()> {
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
-    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
 
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_no_creds() -> Result<()> {
-    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
-    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
-
     let provider = create_provider();
     provider.credential.write().unwrap().reset_token();
     filter::UDSCredentialsFilter::set_received_credential(None);
@@ -361,8 +353,6 @@ fn test_get_credential_count_no_creds() -> Result<()> {
         .set_token("token", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
-
-    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
 
@@ -379,15 +369,9 @@ fn test_get_credential_count_no_rdp() -> Result<()> {
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(
         cred_count,
-        (1u32, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-    ); // No credentials
+        (1u32, 0, true.into())
+    ); // Has credentials. Only can come from RDP or our channel
 
-    // Just to test that the problem was the RDP setting
-    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
-    let cred_count = provider.get_credential_count().unwrap();
-    assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
-
-    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
 

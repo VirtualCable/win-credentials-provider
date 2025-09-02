@@ -67,7 +67,7 @@ impl UDSCredentialsProvider {
     ) -> windows::core::Result<()> {
         // Update credentials
         // Get broker credential
-        if let Some((ticket, key)) = broker::get_broker_credential(&msg.broker_credential) {
+        if let Some((ticket, key)) = broker::transform_broker_credential(&msg.broker_credential) {
             debug_dev!("Received broker credential, obtaining real credentials from broker");
             self.credential.write().unwrap().set_token(&ticket, &key);
 
@@ -232,13 +232,11 @@ impl UDSCredentialsProvider {
         // So our Credential GetSerialization will be invoked to get
         // the credentials.
         // Here, only need to check if we have valid credentials to enable i
-        let is_rdp = crate::utils::helpers::is_rdp_session();
         let has_valid_creds = self.credential.read().unwrap().has_valid_credentials();
         let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(
-            "get_credential_count called. is_rdp: {} has_valid_creds: {}, have_received_creds: {}",
-            is_rdp,
+            "get_credential_count called. has_valid_creds: {}, have_received_creds: {}",
             has_valid_creds,
             have_received_creds
         );
@@ -247,7 +245,7 @@ impl UDSCredentialsProvider {
 
         // If is rdp and either has valid creds or have received creds
         let (pwdefault, pwautologonwithdefault) =
-            if is_rdp && (has_valid_creds || have_received_creds) {
+            if has_valid_creds || have_received_creds {
                 (0, true.into())
             } else {
                 (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())

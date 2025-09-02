@@ -14,8 +14,6 @@ use windows::Win32::{
 };
 use windows::core::*;
 
-use crate::debug_dev;
-
 // Helper
 #[inline]
 pub const fn make_int_resource(id: u16) -> PCWSTR {
@@ -130,14 +128,6 @@ pub fn split_username_domain(username: &str) -> (String, String) {
 }
 
 pub fn is_rdp_session() -> bool {
-    // If environment variable "UDSCP_FORCE_RDP" is set, treat as RDP session (only works on debug builds)
-    #[cfg(debug_assertions)]
-    if let Ok(value) = std::env::var("UDSCP_FORCE_RDP")
-        && value == "1"
-    {
-        debug_dev!("is_rdp_session: forced by UDSCP_FORCE_RDP");
-        return true;
-    }
     unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
 }
 

@@ -1,25 +1,26 @@
 #![cfg(windows)]
 
-use win_cred_provider::{globals, utils::{com, log, log::info, lsa}};
+use win_cred_provider::{
+    credentials::types,
+    globals,
+    utils::{com, helpers::username_with_domain, log, log::info, lsa},
+};
 use windows::{
-    Win32::{
-        Foundation::E_INVALIDARG,
-        Security::Authentication::Identity::{
-            KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON, KerbInteractiveLogon,
-        },
-        UI::Shell::{
-            CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-            CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON,
-            ICredentialProviderCredentialEvents, ICredentialProviderEvents,
-        },
+    Win32::UI::Shell::{
+        CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+        CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_NO_DEFAULT,
+        CREDENTIAL_PROVIDER_STATUS_ICON, ICredentialProviderCredentialEvents,
+        ICredentialProviderEvents,
     },
     core::*,
 };
 
 mod utils;
 
+use utils::test_utils;
+
 #[test]
-#[serial_test::serial(remote_logon)]
+#[serial_test::serial(remote_logon, rdp)]
 fn test_remote_logon_ok_cred() -> Result<()> {
     do_test_remote_logon(true)
 }
@@ -37,13 +38,9 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     unsafe { std::env::set_var("UDSCP_ENABLE_FLOW_LOG", "1") };
 
     let (username, password, domain) = if valid_cred {
-        (
-            "uds-12345678901234567890123456789012345678901234",
-            "123456789012345678901234567890123456789012345678",
-            "",
-        )
+        (test_utils::TEST_BROKER_CREDENTIAL, "", "")
     } else {
-        ("normaluser", "normalpassword", "normaldomain")
+        ("username", "password", "domain")  // Must match UDSCP_FAKE_CREDENTIALS for invalid_cred test to work
     };
     log::setup_logging("debug");
 
@@ -74,43 +71,39 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
         )
     }?;
 
-    // Now UpdateRemoteCredentials with the RDP Logon Info
-    
+    // Now UpdateRemoteCredential with the RDP Logon Info on filter
+    let cred_serial_in = crate::utils::test_utils::create_credential_serialization(
+        username,
+        password,
+        domain,
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+    let mut cred_serial_out = crate::utils::test_utils::create_credential_serialization(
+        "",
+        "",
+        "",
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+
+    // Cred serial out is not used right now, should set the RECV_CRED global on filter
+    unsafe { filter.UpdateRemoteCredential(&cred_serial_in, &mut cred_serial_out)? };
+    assert_eq!(
+        win_cred_provider::credentials::filter::UDSCredentialsFilter::has_received_credential(),
+        valid_cred
+    );
 
     unsafe { provider.SetUsageScenario(CPUS_LOGON, 0)? };
 
-    let _lsa_user = lsa::LsaUnicodeString::new(username);
-    let _lsa_pass = lsa::LsaUnicodeString::new(password);
-    let _lsa_domain = lsa::LsaUnicodeString::new(domain);
-
-    let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
-        Logon: KERB_INTERACTIVE_LOGON {
-            MessageType: KerbInteractiveLogon,
-            LogonDomainName: *_lsa_domain.as_lsa(),
-            UserName: *_lsa_user.as_lsa(),
-            Password: *_lsa_pass.as_lsa(),
-        },
-        LogonId: Default::default(),
-    };
-
-    // Pack the logon
-    let (packed, size) = unsafe { lsa::kerb_interactive_unlock_logon_pack(&logon)? };
-
-    let test_cred_serial = CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
-        ulAuthenticationPackage: 0,
-        clsidCredentialProvider: win_cred_provider::globals::CLSID_UDS_CREDENTIAL_PROVIDER,
-        cbSerialization: size,
-        rgbSerialization: packed,
-    };
+    let test_cred_serial = crate::utils::test_utils::create_credential_serialization(
+        username,
+        password,
+        domain,
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
 
     let res = unsafe { provider.SetSerialization(&test_cred_serial) };
-    assert!(res.is_ok() == valid_cred);
-
-    // If valid_cred is false, the rest of the process is the same as it was on local logon
-    // because credentials were not recognized
-    if !valid_cred {
-        return Ok(()); // End here
-    }
+    // Credential provider should not process the credentials at all
+    assert!(res.is_ok());
 
     let credential_provider_events: utils::com::TestingCredentialProviderEvents =
         utils::com::TestingCredentialProviderEvents::default();
@@ -136,6 +129,7 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     unsafe {
         provider.GetCredentialCount(&mut cred_count, &mut cred_default, &mut autologon)?;
     }
+
     info!(
         "Credential count: {}, default: {}, autologon: {}",
         cred_count,
@@ -143,10 +137,27 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
         autologon.as_bool()
     );
 
+    // Autologon should be TRUE with valid cdeds
+    assert_eq!(autologon.as_bool(), valid_cred);
+
     // As this is a rdp redirected scenario, we expect 1 credential, no default and autologon to be true
     assert_eq!(cred_count, 1);
-    assert_eq!(cred_default, 0);
-    assert_eq!(autologon, BOOL::from(true));
+    assert_eq!(
+        cred_default,
+        if valid_cred {
+            0
+        } else {
+            CREDENTIAL_PROVIDER_NO_DEFAULT
+        }
+    );
+    assert_eq!(
+        autologon,
+        if valid_cred {
+            BOOL::from(true)
+        } else {
+            BOOL::from(false)
+        }
+    );
 
     // Get the Credential interface
     let credential = unsafe { provider.GetCredentialAt(0)? };
@@ -158,6 +169,18 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     let icredential_provider_credential_events: ICredentialProviderCredentialEvents =
         credential_provider_credential_events.clone().into();
     unsafe { credential.Advise(&icredential_provider_credential_events)? };
+
+    // If invalid credentials, simulate the input of fields
+    if !valid_cred {
+        let pwstr_username = com::alloc_pcwstr(&username_with_domain(username, domain)).unwrap();
+        let pwstr_password = com::alloc_pcwstr(password).unwrap();
+        unsafe {
+            credential.SetStringValue(types::UdsFieldId::Username as u32, pwstr_username)?;
+            credential.SetStringValue(types::UdsFieldId::Password as u32, pwstr_password)?;
+        }
+        com::free_pcwstr(pwstr_username);
+        com::free_pcwstr(pwstr_password);
+    }
 
     // GetSerialization needs a bit more setup
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
@@ -185,8 +208,8 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     unsafe { credential.UnAdvise()? };
 
     let res = unsafe { provider.SetSerialization(&pcpcs) };
-    assert!(res.is_err()); // Should return E_INVALIDARG
-    assert_eq!(res.err().unwrap().code(), E_INVALIDARG);
+    // SetSerialization does nothing in fact
+    assert!(res.is_ok());
 
     // End of credential part,UnAdvise provider
     unsafe { provider.UnAdvise()? };

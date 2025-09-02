@@ -125,7 +125,7 @@ fn test_invalid_auth_request() {
     // the auth_token + the broker credential
     let buf = rand::rng()
         .sample_iter(&distr::Alphanumeric)
-        .take(1023)
+        .take(1020)  // Limit to 1024 with ALL data, so < 1024
         .map(char::from)
         .collect::<String>()
         .encode_to_vec();

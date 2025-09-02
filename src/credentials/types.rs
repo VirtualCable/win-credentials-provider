@@ -128,7 +128,6 @@ impl Default for Credential {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::traits::To;
     use windows::Win32::UI::Shell::{CPFIS_NONE, CPFS_DISPLAY_IN_SELECTED_TILE, CPFT_EDIT_TEXT};
 
     use super::*;
@@ -149,7 +148,7 @@ mod tests {
         let com_ptr = com_ptr.unwrap();
         assert!(unsafe { *com_ptr }.dwFieldID == 1);
         assert!(unsafe { *com_ptr }.cpft == CPFT_EDIT_TEXT);
-        let string: String = unsafe { *com_ptr }.pszLabel.to();
+        let string: String = unsafe { (*com_ptr).pszLabel.to_string().unwrap_or_default() };
         assert!(string == "Username");
         assert!(unsafe { *com_ptr }.guidFieldType == GUID::from_u128(32));
     }

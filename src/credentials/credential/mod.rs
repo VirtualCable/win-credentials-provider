@@ -203,7 +203,7 @@ impl UDSCredential {
             let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
             debug_dev!("Field descriptor: {:?}", descriptor);
             if descriptor.is_text_field() {
-                let new_value = crate::utils::com::pcwstr_to_string(*psz);
+                let new_value = unsafe { (*psz).to_string().unwrap_or_default() };
                 debug_dev!("New value: {}", new_value);
                 self.values.write().unwrap()[field_id as usize] = new_value.clone();
                 debug_assert!(self.values.read().unwrap()[field_id as usize] == new_value);
@@ -255,7 +255,9 @@ impl UDSCredential {
         // Our first option is use the credential received into cred
         let cred = self.credential();
         let cred = if !cred.is_valid() {
-            debug_dev!("No valid credentials found in our creds. Looking for filter credentials...");
+            debug_dev!(
+                "No valid credentials found in our creds. Looking for filter credentials..."
+            );
             // Second, is use the credential from the filter, that is OUR credential
             // This credential has been alread filtered, so it's valid and ours.
             // The get_received_credential cleans the filter credential
@@ -312,6 +314,7 @@ impl UDSCredential {
         );
 
         unsafe {
+            // Clean up the pcpcs
             std::ptr::write_bytes(pcpcs, 0, 1);
             (*pcpcs).rgbSerialization = pkiul_out;
             (*pcpcs).cbSerialization = cb_total;

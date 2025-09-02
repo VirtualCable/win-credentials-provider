@@ -34,8 +34,17 @@ pub fn alloc_pwstr(s: &str) -> Result<PWSTR, AllocPwstrError> {
     }
 }
 
+pub fn alloc_pcwstr(s: &str) -> Result<PCWSTR, AllocPwstrError> {
+    let pwstr = alloc_pwstr(s)?;
+    Ok(PCWSTR(pwstr.0))
+}
+
 pub fn free_pcwstr(pcwstr: PCWSTR) {
-   alloc_free(pcwstr.0 as *mut std::ffi::c_void);
+    alloc_free(pcwstr.0 as *mut std::ffi::c_void);
+}
+
+pub fn free_pwstr(pwstr: PWSTR) {
+    alloc_free(pwstr.0 as *mut std::ffi::c_void);
 }
 
 pub fn alloc_free<T>(ptr: *mut T) {
@@ -43,19 +52,6 @@ pub fn alloc_free<T>(ptr: *mut T) {
         if !ptr.is_null() {
             CoTaskMemFree(Some(ptr as _));
         }
-    }
-}
-
-pub fn pcwstr_to_string(pcwstr: PCWSTR) -> String {
-    if pcwstr.is_null() {
-        return String::new();
-    }
-
-    unsafe {
-        // Interpret the pointer as a U16CStr terminated in 0
-        let u16_cstr = widestring::U16CStr::from_ptr_str(pcwstr.0);
-        // Convert directly to String (UTF‑8), with replacement if there are invalid characters
-        u16_cstr.to_string_lossy()
     }
 }
 
@@ -189,7 +185,7 @@ mod tests {
     fn test_alloc_pwstr() {
         let s = "Hello, world!";
         let pwstr = alloc_pwstr(s).expect("Failed to allocate PWSTR");
-        let converted = pcwstr_to_string(PCWSTR(pwstr.0));
+        let converted = unsafe { pwstr.to_string().unwrap_or_default() };
         assert_eq!(s, converted);
         unsafe {
             windows::Win32::System::Com::CoTaskMemFree(Some(pwstr.0 as _));

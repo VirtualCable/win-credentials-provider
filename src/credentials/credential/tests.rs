@@ -1,9 +1,6 @@
 use super::*;
 
-use crate::{
-    test_utils,
-    utils::{log::setup_logging, traits::To},
-};
+use crate::{test_utils, utils::log::setup_logging};
 
 #[test]
 fn test_uds_credential_new() {
@@ -55,7 +52,7 @@ fn test_get_string_value() {
     for field_id in 0..UdsFieldId::NumFields as u32 {
         credential.values.write().unwrap()[field_id as usize] = format!("value{}", field_id);
         let val: PWSTR = credential.get_string_value(field_id).unwrap();
-        let value = crate::utils::com::pcwstr_to_string(val.to());
+        let value = unsafe { val.to_string().unwrap_or_default() };
         assert_eq!(credential.values.read().unwrap()[field_id as usize], value);
     }
 }
@@ -66,7 +63,7 @@ fn test_set_string_value() {
     let credential = UDSCredential::new();
     for field_id in 0..UdsFieldId::NumFields as u32 {
         let value = format!("value{}", field_id);
-        let pcwstr: PCWSTR = crate::utils::com::alloc_pwstr(&value).unwrap().to();
+        let pcwstr: PCWSTR = crate::utils::com::alloc_pcwstr(&value).unwrap();
         let descriptor = &CREDENTIAL_PROVIDER_FIELD_DESCRIPTORS[field_id as usize];
         let res = credential.set_string_value(field_id, &pcwstr);
         if descriptor.is_text_field() {

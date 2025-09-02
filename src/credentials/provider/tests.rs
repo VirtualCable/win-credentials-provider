@@ -4,7 +4,7 @@ use windows::Win32::UI::Shell::ICredentialProviderEvents_Impl;
 
 use super::*;
 
-use crate::utils::{com::ComInitializer, log::setup_logging, traits::To};
+use crate::{credentials::filter, utils::{com::ComInitializer, log::setup_logging}};
 
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
@@ -288,7 +288,7 @@ fn test_get_field_descriptor_at() -> Result<()> {
                     assert_eq!((*desc).dwFieldID, orig.field_id);
                     assert_eq!((*desc).cpft, orig.field_type);
                     assert_eq!((*desc).guidFieldType, orig.guid);
-                    let label = crate::utils::com::pcwstr_to_string((*desc).pszLabel.to());
+                    let label = (*desc).pszLabel.to_string().unwrap_or_default();
                     assert_eq!(label, orig.label);
                 }
                 crate::utils::com::alloc_free(desc as *mut _);
@@ -329,7 +329,7 @@ fn test_get_credential_count_with_filter_creds() -> Result<()> {
 
     let provider = create_provider();
     crate::credentials::filter::UDSCredentialsFilter::set_received_credential(Some(
-        crate::credentials::types::Credential::with_credentials("token", "key")
+        crate::credentials::types::Credential::with_credentials("token", "key"),
     ));
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
@@ -337,7 +337,6 @@ fn test_get_credential_count_with_filter_creds() -> Result<()> {
     unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
-
 
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]
@@ -347,6 +346,7 @@ fn test_get_credential_count_no_creds() -> Result<()> {
 
     let provider = create_provider();
     provider.credential.write().unwrap().reset_token();
+    filter::UDSCredentialsFilter::set_received_credential(None);
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(
         cred_count,

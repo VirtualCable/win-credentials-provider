@@ -2,17 +2,15 @@
 
 use win_cred_provider::{
     credentials::fields,
-    utils::{com, log, log::info, lsa, traits::To},
+    utils::{com, log, log::info, lsa},
 };
 use windows::{
-    Win32::{
-        UI::Shell::{
-            CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-            CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
-            CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_NO_DEFAULT,
-            CREDENTIAL_PROVIDER_STATUS_ICON, ICredentialProviderCredentialEvents,
-            ICredentialProviderEvents,
-        },
+    Win32::UI::Shell::{
+        CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+        CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
+        CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_NO_DEFAULT,
+        CREDENTIAL_PROVIDER_STATUS_ICON, ICredentialProviderCredentialEvents,
+        ICredentialProviderEvents,
     },
     core::*,
 };
@@ -103,8 +101,8 @@ fn test_normal_logon() -> Result<()> {
         if orig_fld.is_text_field() {
             // Com allocated, convert an release
             let pwstr = unsafe { credential.GetStringValue(dwfieldid)? };
-            let str_value = win_cred_provider::utils::com::pcwstr_to_string(pwstr.to());
-            com::free_pcwstr(pwstr.to());
+            let str_value = unsafe { pwstr.to_string().unwrap_or_default() };
+            com::free_pwstr(pwstr);
             fields_data.push(Field {
                 _id: dwfieldid,
                 _state: pcpfs,
@@ -135,32 +133,37 @@ fn test_normal_logon() -> Result<()> {
     // Simulate user filling fields
     for field in fields_data.iter_mut() {
         if field._id == win_cred_provider::credentials::types::UdsFieldId::Username as u32 {
-            let username = com::alloc_pwstr("username@domain").unwrap().to();
+            let username = com::alloc_pcwstr("username@domain").unwrap();
             unsafe { credential.SetStringValue(field._id, username)? };
             com::free_pcwstr(username);
         } else if field._id == win_cred_provider::credentials::types::UdsFieldId::Password as u32 {
-            let password = com::alloc_pwstr("password").unwrap().to();
+            let password = com::alloc_pcwstr("password").unwrap();
             unsafe { credential.SetStringValue(field._id, password)? };
             com::free_pcwstr(password);
         }
     }
     // Re-get the fields, should contain the values stored
-    let username: PCWSTR = unsafe {
+    let username = unsafe {
         credential
             .GetStringValue(win_cred_provider::credentials::types::UdsFieldId::Username as u32)?
-    }
-    .to();
+    };
+
     let password = unsafe {
         credential
             .GetStringValue(win_cred_provider::credentials::types::UdsFieldId::Password as u32)?
-    }
-    .to();
-    assert_eq!(com::pcwstr_to_string(username), "username@domain");
-    assert_eq!(com::pcwstr_to_string(password), "password");
+    };
+    assert_eq!(
+        unsafe { username.to_string().unwrap_or_default() },
+        "username@domain"
+    );
+    assert_eq!(
+        unsafe { password.to_string().unwrap_or_default() },
+        "password"
+    );
 
     // Free COM strings
-    com::free_pcwstr(username);
-    com::free_pcwstr(password);
+    com::free_pwstr(username);
+    com::free_pwstr(password);
 
     // GetSerialization needs a bit mor
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);
@@ -188,7 +191,7 @@ fn test_normal_logon() -> Result<()> {
     unsafe { credential.UnAdvise()? };
 
     let res: std::result::Result<(), Error> = unsafe { provider.SetSerialization(&pcpcs) };
-    assert!(res.is_ok()); 
+    assert!(res.is_ok());
 
     // End of credential part,UnAdvise provider
     unsafe { provider.UnAdvise()? };

@@ -12,7 +12,7 @@ use windows::{
 pub const TEST_BROKER_CREDENTIAL: &str =
     "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
 //                                                       ^ Here starts the key
-pub const VALID_RESPONSE: &str = r#"{"username":"+KpcZ2rcHgyH8HZ4vFBVkEj9bPQV/oRZ","password":"vZ7eWdcfrbXD4YeIK06q3P3o671Zvkz8","domain":"oRxh6xISQjUhpE8DKwF9Nen28rSdMg=="}"#;
+pub const VALID_RESPONSE: &str = r#"{"result": {"username":"+KpcZ2rcHgyH8HZ4vFBVkEj9bPQV/oRZ","password":"vZ7eWdcfrbXD4YeIK06q3P3o671Zvkz8","domain":"oRxh6xISQjUhpE8DKwF9Nen28rSdMg=="}}"#;
 pub const VALID_CREDS: (&str, &str, &str) = ("username", "password", "domain"); // Credentials encripted with TEST_ENCRYPTION_KEY on VALID_RESPONSE
 pub const TEST_BROKER_TOKEN: &str = "uds-123456789012345678901234567890123456789012345678";
 pub const TEST_ENCRYPTION_KEY: &str = "12345678901234567890123456789012"; // Must match the TEST_BROKER_CREDENTIAL

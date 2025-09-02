@@ -78,24 +78,41 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
                 "token": get_actor_token(),
                 "ticket": ticket,
             });
+
+            // Respose is:
+            // return {'result': result, 'stamp': sql_stamp_seconds(), 'version': consts.system.VERSION, 'build': consts.system.VERSION_STAMP,**kwargs}
+            // If "error" is present, there is an error on the response
+            // Inside result is our username, password and domain
+
             match client.post_json::<serde_json::Value, serde_json::Value>(info.url(), &_json_body)
             {
                 // All data in response is base 64 encoded, because it¡s encrypted
                 // Note, in a future, can contain a version field, but currently it does not
                 // Because is not needed. No field = v1
                 Ok(response) => {
-                    let username = response
+                    // Check first if there is an error
+                    if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
+                        warn!("Error obtaining credentials from broker: {}", err);
+                        return Err(E_FAIL.into());
+                    }
+
+                    // No, get the result
+                    let result = response
+                        .get("result")
+                        .and_then(|v| v.as_object())
+                        .ok_or_else(|| {
+                            warn!("Invalid response from broker, no result field");
+                            E_FAIL
+                        })?;
+                    let username = result
                         .get("username")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let password = response
+                    let password = result
                         .get("password")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let domain = response
-                        .get("domain")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
+                    let domain = result.get("domain").and_then(|v| v.as_str()).unwrap_or("");
 
                     // Decript values
                     // Important!!

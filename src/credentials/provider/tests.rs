@@ -6,9 +6,6 @@ use super::*;
 
 use crate::utils::{com::ComInitializer, log::setup_logging, traits::To};
 
-const VALID_BROKER_CREDENTIAL: &str =
-    "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
-
 // Every UDSCredentialProvider creates a different pipe for our tests
 // BUT as the provider reads the pipe name from globals, we must serialize them
 
@@ -104,7 +101,7 @@ fn test_on_data_arrived() -> Result<()> {
     let auth_request = crate::messages::auth::AuthRequest {
         protocol_version: 1,
         auth_token: "auth_token".into(),
-        broker_credential: VALID_BROKER_CREDENTIAL.into(),
+        broker_credential: crate::test_utils::TEST_BROKER_CREDENTIAL.into(),
     };
     provider.on_data_arrived(auth_request)?;
 
@@ -307,7 +304,7 @@ fn test_get_field_descriptor_at() -> Result<()> {
 
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]
-fn test_get_credential_count_ok() -> Result<()> {
+fn test_get_credential_count_with_creds() -> Result<()> {
     // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
     unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
 
@@ -316,13 +313,31 @@ fn test_get_credential_count_ok() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("username", "key");
+        .set_token("token", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
     unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
     Ok(())
 }
+
+#[test]
+#[serial_test::serial(CredentialProvider, rdp)]
+fn test_get_credential_count_with_filter_creds() -> Result<()> {
+    // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
+    unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
+
+    let provider = create_provider();
+    crate::credentials::filter::UDSCredentialsFilter::set_received_credential(Some(
+        crate::credentials::types::Credential::with_credentials("token", "key")
+    ));
+    let cred_count = provider.get_credential_count().unwrap();
+    assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
+
+    unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
+    Ok(())
+}
+
 
 #[test]
 #[serial_test::serial(CredentialProvider, rdp)]

@@ -228,16 +228,19 @@ impl UDSCredentialsProvider {
     }
 
     fn get_credential_count(&self) -> windows::core::Result<(u32, u32, BOOL)> {
-        // If we have redirected credentials, SetSerialization will be invoked prior us
-        // If not, we allow interactive logon
+        // If we have redirected credentials, we will provide the autologon value
+        // So our Credential GetSerialization will be invoked to get
+        // the credentials.
+        // Here, only need to check if we have valid credentials to enable i
         let is_rdp = crate::utils::helpers::is_rdp_session();
         let has_valid_creds = self.credential.read().unwrap().has_valid_credentials();
         let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(
-            "get_credential_count called. is_rdp: {} has_creds: {}",
+            "get_credential_count called. is_rdp: {} has_valid_creds: {}, have_received_creds: {}",
             is_rdp,
-            has_valid_creds
+            has_valid_creds,
+            have_received_creds
         );
 
         let pdwcount = 1; // If 0, our provider will not be shown

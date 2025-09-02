@@ -1,5 +1,16 @@
-use windows::Win32::Foundation::E_FAIL;
-use windows_core::Result;
+use std::sync::{OnceLock, RwLock};
+
+use windows::{
+    Win32::{
+        Foundation::E_FAIL,
+        System::Registry::{
+            HKEY, KEY_READ, REG_NONE, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
+        },
+    },
+    core::*,
+};
+
+use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::{
     globals,
@@ -10,14 +21,15 @@ use crate::{
     },
 };
 
-pub const BROKER_CREDENTIAL_PREFIX: &str = "uds-"; // Broker credential prefix
-pub const BROKER_CREDENTIAL_SIZE: usize = 4 + 48 + 32; // Broker credential size, "uds-" + ticket(48) + key(32)
+pub static ACTOR_TOKEN: OnceLock<RwLock<String>> = OnceLock::new();
 
 /// Returns true if the credential is for the broker
 pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
-    if token.starts_with(BROKER_CREDENTIAL_PREFIX) && token.len() == BROKER_CREDENTIAL_SIZE {
-        let ticket = &token[4..52];
-        let key = &token[52..84];
+    if token.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
+        && token.len() == globals::BROKER_CREDENTIAL_SIZE
+    {
+        let ticket = &token[4..4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE];
+        let key = &token[4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE..];
         Some((ticket.to_string(), key.to_string()))
     } else {
         None
@@ -26,7 +38,7 @@ pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
 
 /// Obtains the Username, password, and domain from broker with provided data
 /// Returns (Username, Password, Domain)
-pub fn get_credentials_from_broker(token: &str, key: &str) -> Result<(String, String, String)> {
+pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, String, String)> {
     let broker_info = globals::get_broker_info();
 
     // Allow us to set an environment var to return fixed creds
@@ -63,7 +75,8 @@ pub fn get_credentials_from_broker(token: &str, key: &str) -> Result<(String, St
             let client = HttpRequestClient::new().with_verify_ssl(info.verify_ssl());
 
             let _json_body = serde_json::json!({
-                "token": token,
+                "token": get_actor_token(),
+                "ticket": ticket,
             });
             match client.post_json::<serde_json::Value, serde_json::Value>(info.url(), &_json_body)
             {
@@ -111,6 +124,73 @@ pub fn get_credentials_from_broker(token: &str, key: &str) -> Result<(String, St
     }
 }
 
+// Gets and caches the Actor token
+pub fn get_actor_token() -> String {
+    ACTOR_TOKEN
+        .get_or_init(|| {
+            let token = read_actor_token().unwrap_or_default();
+            RwLock::new(token)
+        })
+        .read()
+        .unwrap()
+        .clone()
+}
+
+// Reads the configuration from the registry key, that is a base64 json
+// Extracts the json and returns the "own_key" string value
+fn read_actor_token() -> Result<String> {
+    let buffer = unsafe {
+        let mut cfg_key = HKEY::default();
+        RegOpenKeyExW(
+            globals::UDSACTOR_REG_HKEY,
+            globals::UDSACTOR_REG_PATH,
+            None,
+            KEY_READ,
+            &mut cfg_key,
+        )
+        .ok()?;
+
+        let mut data_type = REG_NONE;
+        let mut data_len: u32 = 0;
+
+        // First, query the size of the data
+        RegQueryValueExW(
+            cfg_key,
+            w!(""),
+            None,
+            Some(&mut data_type),
+            None,
+            Some(&mut data_len),
+        )
+        .ok()?;
+
+        // create room for the data
+        let mut buffer = vec![0u8; data_len as usize];
+        RegQueryValueExW(
+            cfg_key,
+            PCWSTR::null(),
+            None,
+            Some(&mut data_type),
+            Some(buffer.as_mut_ptr()),
+            Some(&mut data_len),
+        )
+        .ok()?;
+
+        RegCloseKey(cfg_key).ok()?;
+        buffer
+    };
+
+    let b64_str = String::from_utf8_lossy(&buffer);
+    let decoded = STANDARD.decode(b64_str.trim()).expect("Invalid Base64");
+
+    let json = serde_json::from_slice::<serde_json::Value>(&decoded).map_err(|e| {
+        error!("Error parsing broker config JSON: {}", e);
+        E_FAIL
+    })?;
+
+    Ok(json["own_token"].as_str().unwrap_or("").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,7 +208,8 @@ mod tests {
     #[serial_test::serial(broker)]
     fn test_get_credentials_from_broker_valid_info() {
         let (_url, _server, mock) = utils::create_fake_broker();
-        let result = get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
+        let result =
+            get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
         assert!(result.is_ok());
 
         // Check the returned values
@@ -147,5 +228,15 @@ mod tests {
         globals::set_broker_info("", false);
         let result = get_credentials_from_broker("token", "key");
         assert!(result.is_err());
+    }
+
+    // Note: This test is disabled by default, needs the key on registry
+    // to work
+    #[test]
+    #[ignore]
+    fn test_get_actor_token() {
+        log::setup_logging("debug");
+        let result = get_actor_token();
+        assert_eq!(result, "123456");
     }
 }

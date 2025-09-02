@@ -3,14 +3,29 @@ use std::sync::{
     atomic::{AtomicU32, Ordering},
 };
 
-use windows::{Win32::Foundation::HINSTANCE, core::GUID};
+use windows::{
+    Win32::{
+        Foundation::HINSTANCE,
+        System::Registry::{HKEY, HKEY_LOCAL_MACHINE},
+    },
+    core::*,
+};
 
 use crate::debug_dev;
 
 pub const CLSID_UDS_CREDENTIAL_PROVIDER: GUID =
     GUID::from_u128(0x6e3b975c_2cf3_11e6_88a9_10feed05884b);
 
-// Gobal DLL References counter
+pub const UDSACTOR_REG_HKEY: HKEY = HKEY_LOCAL_MACHINE;
+pub const UDSACTOR_REG_PATH: PCWSTR = w!("SOFTWARE\\UDSActor");
+
+pub const BROKER_CREDENTIAL_PREFIX: &str = "uds-"; // Broker credential prefix
+pub const BROKER_CREDENTIAL_TOKEN_SIZE: usize = 48;
+pub const BROKER_CREDENTIAL_KEY_SIZE: usize = 32;
+pub const BROKER_CREDENTIAL_SIZE: usize =
+    4 + BROKER_CREDENTIAL_TOKEN_SIZE + BROKER_CREDENTIAL_KEY_SIZE; // Broker credential size, "uds-" + ticket(48) + key(32)
+
+// Global DLL References counter
 pub static DLL_REF_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // Global HINSTANCE of the DLL

@@ -306,7 +306,7 @@ fn test_get_field_descriptor_at() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(CredentialProvider)]
+#[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_ok() -> Result<()> {
     // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
     unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
@@ -325,7 +325,7 @@ fn test_get_credential_count_ok() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(CredentialProvider)]
+#[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_no_creds() -> Result<()> {
     // Set the UDSCP_FORCE_RDP to force system recognizes as RDP
     unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
@@ -352,7 +352,7 @@ fn test_get_credential_count_no_creds() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(CredentialProvider)]
+#[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_no_rdp() -> Result<()> {
     let provider = create_provider();
     provider

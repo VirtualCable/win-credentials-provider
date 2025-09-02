@@ -43,21 +43,12 @@ impl UDSCredentialsFilter {
     }
 
     pub fn set_received_credential(cred: Option<types::Credential>) {
-        let mut recv_guard: std::sync::RwLockWriteGuard<'_, Option<types::Credential>> = RECV_CRED.write().unwrap();
+        let mut recv_guard: std::sync::RwLockWriteGuard<'_, Option<types::Credential>> =
+            RECV_CRED.write().unwrap();
         *recv_guard = cred;
     }
-}
 
-impl Default for UDSCredentialsFilter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[allow(non_snake_case)]
-impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
-    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn Filter(
+    fn filter(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
         dwflags: u32,
@@ -65,7 +56,6 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         rgballow: *mut windows::core::BOOL,
         cproviders: u32,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderFilter::Filter");
         let is_rdp = helpers::is_rdp_session();
 
         debug_dev!("Filter called. is_rdp: {} {} {:?}", is_rdp, dwflags, cpus);
@@ -73,13 +63,8 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
                 if !is_rdp {
-                    debug_dev!("Not an RDP session, allowing all providers");
-                    // If not RDP, allow all providers
-                    for i in 0..cproviders as isize {
-                        unsafe {
-                            *rgballow.offset(i) = true.into();
-                        }
-                    }
+                    debug_dev!("Not an RDP session, leaving the providers list as is");
+                    // If not RDP, keep the rgballow as is
                     return Ok(());
                 }
                 // In logon or unlock workstation, we only allow our provider if it's not an RDP session
@@ -103,15 +88,11 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         Ok(())
     }
 
-    /// Only invoked when the user is logging in and NLA is enabled
-    #[allow(clippy::not_unsafe_ptr_arg_deref)] // COM need the signature as is. Cannot mark as unsafe
-    fn UpdateRemoteCredential(
+    fn update_remote_credential(
         &self,
         pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential");
-
         debug_dev!("UpdateRemoteCredential called. {:?}", pcpcsin);
         #[cfg(debug_assertions)]
         {
@@ -148,6 +129,43 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         }
 
         Ok(())
+    }
+
+}
+
+impl Default for UDSCredentialsFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[allow(non_snake_case)]
+impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
+    fn Filter(
+        &self,
+        cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
+        dwflags: u32,
+        rgclsidproviders: *const windows::core::GUID,
+        rgballow: *mut windows::core::BOOL,
+        cproviders: u32,
+    ) -> windows::core::Result<()> {
+        debug_flow!("ICredentialProviderFilter::Filter");
+        self.filter(cpus, dwflags, rgclsidproviders, rgballow, cproviders)
+    }
+
+    /// Only invoked when the user is logging in and NLA is enabled
+    fn UpdateRemoteCredential(
+        &self,
+        pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+        pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
+    ) -> windows::core::Result<()> {
+        // Note that we could use this to return a Credential Serialization from Here
+        // Maybe this way, we could provide with credentials on an early stage if needed
+        // Currently, to allow more flows, we will store and process it on our Credential Provider
+        // But this is something to take into account...
+        debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential");
+
+        self.update_remote_credential(pcpcsin, pcpcsout)
     }
 }
 

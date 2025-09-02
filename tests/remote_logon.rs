@@ -28,7 +28,7 @@ fn test_remote_logon_ok_cred() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(remote_logon)]
+#[serial_test::serial(remote_logon, rdp)]
 fn test_remote_logon_invalid_cred() -> Result<()> {
     do_test_remote_logon(false)
 }

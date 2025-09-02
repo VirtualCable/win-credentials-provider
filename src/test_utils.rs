@@ -1,4 +1,5 @@
-use crate::{debug_dev, globals};
+use crate::{debug_dev, globals, utils::lsa::LsaUnicodeString};
+use windows::{core::*, Win32::{Security::Authentication::Identity::{KerbInteractiveLogon, KERB_INTERACTIVE_LOGON, KERB_INTERACTIVE_UNLOCK_LOGON}, UI::Shell::CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION}};
 
 pub const TEST_BROKER_CREDENTIAL: &str =
     "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
@@ -37,4 +38,34 @@ pub fn create_fake_broker() -> (String, mockito::ServerGuard, mockito::Mock) {
     globals::set_broker_info(&url, true); // Is http, so ssl does not mind here
 
     (url, server, mock)
+}
+
+pub fn create_credential_serialization(
+    username: &str,
+    password: &str,
+    domain: &str,
+    guid: GUID,
+) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
+    let _lsa_user = LsaUnicodeString::new(username);
+    let _lsa_pass = LsaUnicodeString::new(password);
+    let _lsa_domain = LsaUnicodeString::new(domain);
+
+    let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
+        Logon: KERB_INTERACTIVE_LOGON {
+            MessageType: KerbInteractiveLogon,
+            LogonDomainName: *_lsa_domain.as_lsa(),
+            UserName: *_lsa_user.as_lsa(),
+            Password: *_lsa_pass.as_lsa(),
+        },
+        LogonId: Default::default(),
+    };
+    // Pack the logon
+    let (packed, size) = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_pack(&logon)? };
+
+    Ok(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
+        ulAuthenticationPackage: 0,
+        clsidCredentialProvider: guid,
+        cbSerialization: size,
+        rgbSerialization: packed,
+    })
 }

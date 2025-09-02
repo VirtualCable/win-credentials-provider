@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::globals;
+use crate::{globals, test_utils};
 
 #[test]
 fn test_uds_credentials_filter_credentials() -> Result<()> {
@@ -140,6 +140,45 @@ fn test_uds_credential_filter_rdp() -> Result<()> {
 
     // Reset the environment variable
     unsafe { std::env::remove_var("UDSCP_FORCE_RDP") };
+
+    Ok(())
+}
+
+#[test]
+fn test_update_remote_credentials() -> Result<()> {
+    crate::utils::log::setup_logging("debug");
+    let filter = UDSCredentialsFilter::new();
+
+    let cred_serial_in = test_utils::create_credential_serialization(
+        "username",
+        "password",
+        "domain",
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+    let mut cred_serial_out = test_utils::create_credential_serialization(
+        "username",
+        "password",
+        "domain",
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+
+    // Cred serial out is not used, as us not our format, will not has_received_credential
+    filter.update_remote_credential(&cred_serial_in, &mut cred_serial_out)?;
+
+    assert!(!UDSCredentialsFilter::has_received_credential());
+
+    // With our format, should set it
+    let cred_serial_in = test_utils::create_credential_serialization(
+        test_utils::TEST_BROKER_CREDENTIAL,
+        "",
+        "",
+        globals::CLSID_UDS_CREDENTIAL_PROVIDER,
+    )?;
+
+    // With our format, should set it
+    filter.update_remote_credential(&cred_serial_in, &mut cred_serial_out)?;
+
+    assert!(UDSCredentialsFilter::has_received_credential());
 
     Ok(())
 }

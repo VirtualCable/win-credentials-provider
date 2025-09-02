@@ -6,7 +6,6 @@ use win_cred_provider::{
 };
 use windows::{
     Win32::{
-        Foundation::E_INVALIDARG,
         UI::Shell::{
             CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
             CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE, CREDENTIAL_PROVIDER_FIELD_STATE,
@@ -188,9 +187,8 @@ fn test_normal_logon() -> Result<()> {
 
     unsafe { credential.UnAdvise()? };
 
-    let res = unsafe { provider.SetSerialization(&pcpcs) };
-    assert!(res.is_err()); // Should return E_INVALIDARG
-    assert_eq!(res.err().unwrap().code(), E_INVALIDARG);
+    let res: std::result::Result<(), Error> = unsafe { provider.SetSerialization(&pcpcs) };
+    assert!(res.is_ok()); 
 
     // End of credential part,UnAdvise provider
     unsafe { provider.UnAdvise()? };

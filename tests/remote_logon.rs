@@ -1,8 +1,6 @@
 #![cfg(windows)]
 
-use win_cred_provider::{
-    utils::{com, log, log::info, lsa},
-};
+use win_cred_provider::{globals, utils::{com, log, log::info, lsa}};
 use windows::{
     Win32::{
         Foundation::E_INVALIDARG,
@@ -11,9 +9,8 @@ use windows::{
         },
         UI::Shell::{
             CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-            CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
-            CREDENTIAL_PROVIDER_STATUS_ICON, ICredentialProviderCredentialEvents,
-            ICredentialProviderEvents,
+            CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_STATUS_ICON,
+            ICredentialProviderCredentialEvents, ICredentialProviderEvents,
         },
     },
     core::*,
@@ -53,6 +50,32 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     let factory = utils::com::ClassFactoryTest::new()?;
     // The drop on end, will force the Channel stop
     let provider = factory.create_provider()?;
+    let filter = factory.create_filter()?;
+
+    // First invoked is filter of Filter
+    let list_of_clids: Vec<GUID> = (0..10)
+        .map(GUID::from_u128)
+        .chain(std::iter::once(globals::CLSID_UDS_CREDENTIAL_PROVIDER))
+        .chain((11..=20).map(GUID::from_u128))
+        .collect();
+
+    // Make list even false, odd true for better testing that is not modified
+    let mut list_of_allows = (0..list_of_clids.len())
+        .map(|i| BOOL(i as i32 % 2))
+        .collect::<Vec<BOOL>>();
+
+    unsafe {
+        filter.Filter(
+            CPUS_LOGON,
+            0,
+            list_of_clids.as_ptr(),
+            list_of_allows.as_mut_ptr(),
+            list_of_clids.len() as u32,
+        )
+    }?;
+
+    // Now UpdateRemoteCredentials with the RDP Logon Info
+    
 
     unsafe { provider.SetUsageScenario(CPUS_LOGON, 0)? };
 
@@ -81,12 +104,12 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     };
 
     let res = unsafe { provider.SetSerialization(&test_cred_serial) };
-    assert!(res.is_ok() == valid_cred); 
+    assert!(res.is_ok() == valid_cred);
 
     // If valid_cred is false, the rest of the process is the same as it was on local logon
     // because credentials were not recognized
     if !valid_cred {
-        return Ok(());  // End here
+        return Ok(()); // End here
     }
 
     let credential_provider_events: utils::com::TestingCredentialProviderEvents =

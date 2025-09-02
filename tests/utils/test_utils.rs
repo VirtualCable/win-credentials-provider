@@ -1,4 +1,5 @@
-use crate::{debug_dev, globals, utils::lsa::LsaUnicodeString};
+// Except headers, is a copy of the crate test_utils, as helpers for testing
+use win_cred_provider::{globals, utils::{lsa, log::debug}};
 use windows::{
     Win32::{
         Security::Authentication::Identity::{
@@ -35,7 +36,7 @@ pub fn create_fake_broker() -> (String, mockito::ServerGuard, mockito::Mock) {
                 .iter()
                 .map(|&c| c as char)
                 .collect::<String>();
-            debug_dev!("Request body: {}", body);
+            debug!("Request body: {}", body);
             let v: serde_json::Value = serde_json::from_str(&body).unwrap();
             v.get("token").is_some()
         })
@@ -54,9 +55,9 @@ pub fn create_credential_serialization(
     domain: &str,
     guid: GUID,
 ) -> Result<CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION> {
-    let _lsa_user = LsaUnicodeString::new(username);
-    let _lsa_pass = LsaUnicodeString::new(password);
-    let _lsa_domain = LsaUnicodeString::new(domain);
+    let _lsa_user = lsa::LsaUnicodeString::new(username);
+    let _lsa_pass = lsa::LsaUnicodeString::new(password);
+    let _lsa_domain = lsa::LsaUnicodeString::new(domain);
 
     let logon = KERB_INTERACTIVE_UNLOCK_LOGON {
         Logon: KERB_INTERACTIVE_LOGON {
@@ -68,7 +69,7 @@ pub fn create_credential_serialization(
         LogonId: Default::default(),
     };
     // Pack the logon
-    let (packed, size) = unsafe { crate::utils::lsa::kerb_interactive_unlock_logon_pack(&logon)? };
+    let (packed, size) = unsafe { lsa::kerb_interactive_unlock_logon_pack(&logon)? };
 
     Ok(CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION {
         ulAuthenticationPackage: 0,

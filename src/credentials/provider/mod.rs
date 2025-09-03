@@ -1,4 +1,3 @@
-#[cfg(debug_assertions)]
 use std::sync::{
     Arc, RwLock,
     atomic::{AtomicBool, Ordering},

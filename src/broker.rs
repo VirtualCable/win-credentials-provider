@@ -21,25 +21,56 @@ use crate::{
     },
 };
 
-pub static ACTOR_TOKEN: OnceLock<RwLock<String>> = OnceLock::new();
+#[derive(Clone)]
+pub struct BrokerInfo {
+    url: String,
+    actor_token: String,
+    verify_ssl: bool,
+}
 
-/// Returns true if the credential is for the broker
-pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
-    if token.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
-        && token.len() == globals::BROKER_CREDENTIAL_SIZE
-    {
-        let ticket = &token[4..4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE];
-        let key = &token[4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE..];
-        Some((ticket.to_string(), key.to_string()))
-    } else {
-        None
+impl BrokerInfo {
+    pub fn new(url: String, actor_token: String, verify_ssl: bool) -> Self {
+        Self {
+            url,
+            verify_ssl,
+            actor_token,
+        }
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn verify_ssl(&self) -> bool {
+        self.verify_ssl
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.url.is_empty() && !self.actor_token.is_empty()
     }
 }
+
+impl Default for BrokerInfo {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            actor_token: String::new(),
+            verify_ssl: true,
+        }
+    }
+}
+
+// Broker info
+static BROKER_INFO: OnceLock<RwLock<BrokerInfo>> = OnceLock::new();
 
 /// Obtains the Username, password, and domain from broker with provided data
 /// Returns (Username, Password, Domain)
 pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, String, String)> {
-    let broker_info = globals::get_broker_info();
+    let broker_info = get_broker_info();
+    if !broker_info.is_valid() {
+        warn!("Broker info is not available");
+        return Err(E_FAIL.into());
+    }
 
     // Allow us to set an environment var to return fixed creds
     // when debugging. Contains username:password:domain
@@ -66,88 +97,93 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
         error!("Invalid UDSCP_FAKE_CREDENTIALS format");
     }
 
-    match broker_info {
-        Some(info) => {
-            if info.url().is_empty() {
+    let client = HttpRequestClient::new().with_verify_ssl(broker_info.verify_ssl());
+
+    let _json_body = serde_json::json!({
+        "token": broker_info.actor_token,
+        "ticket": ticket,
+    });
+
+    // Respose is:
+    // return {'result': result, 'stamp': sql_stamp_seconds(), 'version': consts.system.VERSION, 'build': consts.system.VERSION_STAMP,**kwargs}
+    // If "error" is present, there is an error on the response
+    // Inside result is our username, password and domain
+
+    match client.post_json::<serde_json::Value, serde_json::Value>(broker_info.url(), &_json_body) {
+        // All data in response is base 64 encoded, because it¡s encrypted
+        // Note, in a future, can contain a version field, but currently it does not
+        // Because is not needed. No field = v1
+        Ok(response) => {
+            // Check first if there is an error
+            if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
+                warn!("Error obtaining credentials from broker: {}", err);
                 return Err(E_FAIL.into());
             }
 
-            let client = HttpRequestClient::new().with_verify_ssl(info.verify_ssl());
+            // No, get the result
+            let result = response
+                .get("result")
+                .and_then(|v| v.as_object())
+                .ok_or_else(|| {
+                    warn!("Invalid response from broker, no result field");
+                    E_FAIL
+                })?;
+            let username = result
+                .get("username")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let password = result
+                .get("password")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let domain = result.get("domain").and_then(|v| v.as_str()).unwrap_or("");
 
-            let _json_body = serde_json::json!({
-                "token": get_actor_token(),
-                "ticket": ticket,
-            });
+            // Decript values
+            // Important!!
+            // nonce are 1 for username, 2 for password and 3 for domain.. The key is ephemeral, only used once...
+            // Encryption is AES256GCM
+            let username = crypt::decrypt(username, key, 1).unwrap_or_default();
+            let password = crypt::decrypt(password, key, 2).unwrap_or_default();
+            let domain = crypt::decrypt(domain, key, 3).unwrap_or_default();
 
-            // Respose is:
-            // return {'result': result, 'stamp': sql_stamp_seconds(), 'version': consts.system.VERSION, 'build': consts.system.VERSION_STAMP,**kwargs}
-            // If "error" is present, there is an error on the response
-            // Inside result is our username, password and domain
-
-            match client.post_json::<serde_json::Value, serde_json::Value>(info.url(), &_json_body)
-            {
-                // All data in response is base 64 encoded, because it¡s encrypted
-                // Note, in a future, can contain a version field, but currently it does not
-                // Because is not needed. No field = v1
-                Ok(response) => {
-                    // Check first if there is an error
-                    if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
-                        warn!("Error obtaining credentials from broker: {}", err);
-                        return Err(E_FAIL.into());
-                    }
-
-                    // No, get the result
-                    let result = response
-                        .get("result")
-                        .and_then(|v| v.as_object())
-                        .ok_or_else(|| {
-                            warn!("Invalid response from broker, no result field");
-                            E_FAIL
-                        })?;
-                    let username = result
-                        .get("username")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let password = result
-                        .get("password")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let domain = result.get("domain").and_then(|v| v.as_str()).unwrap_or("");
-
-                    // Decript values
-                    // Important!!
-                    // nonce are 1 for username, 2 for password and 3 for domain.. The key is ephemeral, only used once...
-                    // Encryption is AES256GCM
-                    let username = crypt::decrypt(username, key, 1).unwrap_or_default();
-                    let password = crypt::decrypt(password, key, 2).unwrap_or_default();
-                    let domain = crypt::decrypt(domain, key, 3).unwrap_or_default();
-
-                    Ok((
-                        username.to_string(),
-                        password.to_string(),
-                        domain.to_string(),
-                    ))
-                }
-                Err(e) => {
-                    warn!("Error obtaining credentials from broker: {}", e);
-                    Err(E_FAIL.into())
-                }
-            }
+            Ok((
+                username.to_string(),
+                password.to_string(),
+                domain.to_string(),
+            ))
         }
-        None => {
-            warn!("Broker information is not set");
+        Err(e) => {
+            warn!("Error obtaining credentials from broker: {}", e);
             Err(E_FAIL.into())
         }
     }
 }
 
-// Gets and caches the Actor token
-pub fn get_actor_token() -> String {
-    ACTOR_TOKEN
-        .get_or_init(|| {
-            let token = read_actor_token().unwrap_or_default();
-            RwLock::new(token)
-        })
+/// Returns true if the credential is for the broker
+pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
+    if token.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
+        && token.len() == globals::BROKER_CREDENTIAL_SIZE
+    {
+        let ticket = &token[4..4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE];
+        let key = &token[4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE..];
+        Some((ticket.to_string(), key.to_string()))
+    } else {
+        None
+    }
+}
+
+// Allow setting of any other method the broker info
+pub fn set_broker_info(url: &str, actor_token: &str, verify_ssl: bool) {
+    *BROKER_INFO
+        .get_or_init(|| RwLock::new(BrokerInfo::default()))
+        .write()
+        .unwrap() = BrokerInfo::new(url.to_string(), actor_token.to_string(), verify_ssl);
+}
+
+// Gets and caches the Broker info
+pub fn get_broker_info() -> BrokerInfo {
+    BROKER_INFO
+        .get_or_init(|| RwLock::new(read_broker_info().unwrap_or_default()))
         .read()
         .unwrap()
         .clone()
@@ -155,7 +191,7 @@ pub fn get_actor_token() -> String {
 
 // Reads the configuration from the registry key, that is a base64 json
 // Extracts the json and returns the "own_key" string value
-fn read_actor_token() -> Result<String> {
+fn read_broker_info() -> Result<BrokerInfo> {
     let buffer = unsafe {
         let mut cfg_key = HKEY::default();
         RegOpenKeyExW(
@@ -205,7 +241,23 @@ fn read_actor_token() -> Result<String> {
         E_FAIL
     })?;
 
-    Ok(json["own_token"].as_str().unwrap_or("").to_string())
+    Ok(BrokerInfo {
+        url: format!(
+            "https://{}/uds/rest/actor/v3/ticket",
+            json.get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+        ),
+        verify_ssl: json
+            .get("check_certificate")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        actor_token: json
+            .get("own_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -242,7 +294,7 @@ mod tests {
     #[serial_test::serial(broker)]
     fn test_get_credentials_from_broker_no_info() {
         log::setup_logging("debug");
-        globals::set_broker_info("", false);
+        set_broker_info("", "", false);
         let result = get_credentials_from_broker("token", "key");
         assert!(result.is_err());
     }
@@ -251,9 +303,9 @@ mod tests {
     // to work
     #[test]
     #[ignore]
-    fn test_get_actor_token() {
+    fn test_get_broker_info() {
         log::setup_logging("debug");
-        let result = get_actor_token();
+        let result = get_broker_info().actor_token;
         assert_eq!(result, "123456");
     }
 }

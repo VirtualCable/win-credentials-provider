@@ -34,9 +34,6 @@ static DLL_INSTANCE: std::sync::OnceLock<SafeHInstance> = std::sync::OnceLock::n
 // Auth token
 static AUTHTOKEN: OnceLock<RwLock<Option<String>>> = OnceLock::new();
 
-// Broker info
-static BROKER_INFO: OnceLock<RwLock<Option<BrokerInfo>>> = OnceLock::new();
-
 // PIPE NAME
 static PIPE_NAME: OnceLock<RwLock<Option<String>>> = OnceLock::new();
 
@@ -78,58 +75,6 @@ pub fn get_auth_token() -> Option<String> {
     AUTHTOKEN
         .get()
         .and_then(|lock| lock.read().unwrap().clone())
-}
-
-#[derive(Clone)]
-pub struct BrokerInfo {
-    url: String,
-    verify_ssl: bool,
-}
-
-impl BrokerInfo {
-    pub fn new(url: String, verify_ssl: bool) -> Self {
-        Self { url, verify_ssl }
-    }
-
-    pub fn url(&self) -> &str {
-        &self.url
-    }
-
-    pub fn verify_ssl(&self) -> bool {
-        self.verify_ssl
-    }
-}
-
-impl Default for BrokerInfo {
-    fn default() -> Self {
-        Self {
-            url: String::new(),
-            verify_ssl: true,
-        }
-    }
-}
-
-pub fn set_broker_info(url: &str, verify_ssl: bool) {
-    BROKER_INFO
-        .get_or_init(|| RwLock::new(Some(BrokerInfo::default())))
-        .write()
-        .unwrap()
-        .replace(BrokerInfo::new(url.to_string(), verify_ssl));
-}
-
-pub fn get_broker_info() -> Option<BrokerInfo> {
-    BROKER_INFO
-        .get()
-        .and_then(|lock| lock.read().unwrap().clone())
-}
-
-#[cfg(test)]
-pub fn reset_broker_info() {
-    BROKER_INFO
-        .get_or_init(|| RwLock::new(Some(BrokerInfo::default())))
-        .write()
-        .unwrap()
-        .take();
 }
 
 pub fn get_pipe_name() -> String {

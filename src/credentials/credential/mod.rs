@@ -89,7 +89,7 @@ impl UDSCredential {
             cookie: Arc::new(RwLock::new(None)),
         }
     }
-    pub fn reset_token(&mut self) {
+    pub fn reset_credential(&mut self) {
         self.credential.write().unwrap().reset();
 
         // let mut values = self.values.write().unwrap();
@@ -98,25 +98,23 @@ impl UDSCredential {
         // }
     }
 
-    pub fn has_valid_credentials(&self) -> bool {
+    pub fn has_valid_credential(&self) -> bool {
         self.credential.read().unwrap().is_valid()
     }
 
-    pub fn set_token(&mut self, token: &str, key: &str) {
+    pub fn set_credential(&mut self, ticket: &str, key: &str) {
         // If no domain, use GetComputerNameW
         // Ensure previous password is cleared with zero values before
         let mut credential = self.credential.write().unwrap();
-        credential.reset();
-        credential.token = token.to_string();
-        credential.key = key.to_string();
+        credential.set_credential(ticket, key);
     }
 
-    pub fn token(&self) -> String {
-        self.credential.read().unwrap().token.clone()
+    pub fn ticket(&self) -> String {
+        self.credential.read().unwrap().ticket().to_string()
     }
 
     pub fn key(&self) -> String {
-        self.credential.read().unwrap().key.clone()
+        self.credential.read().unwrap().key().to_string()
     }
 
     pub fn set_values(&self, username: &str, password: &str, domain: &str) {
@@ -311,7 +309,7 @@ impl UDSCredential {
             (username, password, domain)
         } else {
             // Get from broker or fail, because are our credentials and must be valid
-            let response = broker::get_credentials_from_broker(&cred.token, &cred.key)?;
+            let response = broker::get_credentials_from_broker(cred.ticket(), cred.key())?;
 
             (response.0, response.1, response.2)
         };

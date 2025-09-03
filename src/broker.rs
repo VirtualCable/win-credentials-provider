@@ -73,6 +73,10 @@ impl BrokerInfo {
         self.verify_ssl
     }
 
+    pub fn actor_token(&self) -> &str {
+        &self.actor_token
+    }
+
     pub fn is_valid(&self) -> bool {
         !self.url.is_empty() && !self.actor_token.is_empty()
     }
@@ -188,12 +192,12 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
 }
 
 /// Returns true if the credential is for the broker
-pub fn transform_broker_credential(token: &str) -> Option<(String, String)> {
-    if token.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
-        && token.len() == globals::BROKER_CREDENTIAL_SIZE
+pub fn transform_broker_credential(broker_credential: &str) -> Option<(String, String)> {
+    if broker_credential.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
+        && broker_credential.len() == globals::BROKER_CREDENTIAL_SIZE
     {
-        let ticket = &token[4..4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE];
-        let key = &token[4 + globals::BROKER_CREDENTIAL_TOKEN_SIZE..];
+        let ticket = &broker_credential[4..4 + globals::BROKER_CREDENTIAL_TICKET_SIZE];
+        let key = &broker_credential[4 + globals::BROKER_CREDENTIAL_TICKET_SIZE..];
         Some((ticket.to_string(), key.to_string()))
     } else {
         None
@@ -295,7 +299,9 @@ mod tests {
     #[test]
     fn test_is_broker_credential() {
         log::setup_logging("debug");
-        assert!(transform_broker_credential(utils::TEST_BROKER_CREDENTIAL).is_some());
+        let cred = transform_broker_credential(utils::TEST_BROKER_CREDENTIAL).unwrap();  // fail if None
+        assert_eq!(cred.0, utils::TEST_BROKER_TICKET);
+        assert_eq!(cred.1, utils::TEST_ENCRYPTION_KEY);
         assert!(transform_broker_credential("uds-short").is_none());
         assert!(transform_broker_credential("not_a_broker_credential").is_none());
     }
@@ -322,7 +328,7 @@ mod tests {
     fn test_get_credentials_from_broker_no_info() {
         log::setup_logging("debug");
         set_broker_info("", "", false);
-        let result = get_credentials_from_broker("token", "key");
+        let result = get_credentials_from_broker("ticket", "key");
         assert!(result.is_err());
     }
 

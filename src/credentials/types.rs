@@ -109,39 +109,52 @@ pub enum UdsFieldId {
 
 #[derive(Debug, Clone)]
 pub struct Credential {
-    pub token: String,
-    pub key: String,
+    ticket: String,
+    key: String,
 }
 
 impl Credential {
     pub fn new() -> Self {
         Self {
-            token: String::new(),
+            ticket: String::new(),
             key: String::new(),
         }
     }
 
-    pub fn with_credentials(token: &str, key: &str) -> Self {
+    pub fn with_credential(ticket: &str, key: &str) -> Self {
         Self {
-            token: token.to_string(),
+            ticket: ticket.to_string(),
             key: key.to_string(),
         }
     }
 
+    pub fn set_credential(&mut self, ticket: &str, key: &str) {
+        self.ticket = ticket.to_string();
+        self.key = key.to_string();
+    }
+
+    pub fn ticket(&self) -> &str {
+        &self.ticket
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
     pub fn reset(&mut self) {
-        self.token.clear();
+        self.ticket.clear();
         self.key.clear();
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.token.is_empty() && !self.key.is_empty()
+        !self.ticket.is_empty() && !self.key.is_empty()
     }
 }
 
 impl Drop for Credential {
     fn drop(&mut self) {
         // Zeroize the sensitive data
-        let mut token = Zeroizing::new(self.token.clone());
+        let mut token = Zeroizing::new(self.ticket.clone());
         let mut key = Zeroizing::new(self.key.clone());
         token.zeroize();
         key.zeroize();

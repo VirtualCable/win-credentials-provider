@@ -128,16 +128,17 @@ fn test_uds_credential_provider_new() -> Result<()> {
 #[serial_test::serial(CredentialProvider)]
 fn test_on_data_arrived() -> Result<()> {
     let provider = create_provider();
+    let broker_info = broker::get_broker_info();
     // Simulate incoming data
     let auth_request = crate::messages::auth::AuthRequest {
         protocol_version: 1,
-        auth_token: "auth_token".into(),
+        auth_token: broker_info.actor_token().to_string(),
         broker_credential: crate::test_utils::TEST_BROKER_CREDENTIAL.into(),
     };
     provider.on_data_arrived(auth_request)?;
 
     let credential_guard = provider.credential.read().unwrap();
-    assert!(credential_guard.has_valid_credentials());
+    assert!(credential_guard.has_valid_credential());
 
     Ok(())
 }
@@ -151,12 +152,12 @@ fn test_set_usage_scenario_logon() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("token", "key");
+        .set_credential("ticket", "key");
 
     provider.set_usage_scenario(CPUS_LOGON)?;
     // Ensure credentials are reset
-    assert!(!provider.credential.read().unwrap().has_valid_credentials());
-    assert!(provider.credential.read().unwrap().token().is_empty());
+    assert!(!provider.credential.read().unwrap().has_valid_credential());
+    assert!(provider.credential.read().unwrap().ticket().is_empty());
     assert!(provider.credential.read().unwrap().key().is_empty());
 
     Ok(())
@@ -171,11 +172,11 @@ fn test_set_usage_scenario_unlock() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("token", "key");
+        .set_credential("ticket", "key");
     provider.set_usage_scenario(CPUS_UNLOCK_WORKSTATION)?;
     // Ensure credentials are reset
-    assert!(!provider.credential.read().unwrap().has_valid_credentials());
-    assert!(provider.credential.read().unwrap().token().is_empty());
+    assert!(!provider.credential.read().unwrap().has_valid_credential());
+    assert!(provider.credential.read().unwrap().ticket().is_empty());
     assert!(provider.credential.read().unwrap().key().is_empty());
 
     Ok(())
@@ -341,7 +342,7 @@ fn test_get_credential_count_with_creds() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("token", "key");
+        .set_credential("ticket", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
 
@@ -353,7 +354,7 @@ fn test_get_credential_count_with_creds() -> Result<()> {
 fn test_get_credential_count_with_filter_creds() -> Result<()> {
     let provider = create_provider();
     crate::credentials::filter::UDSCredentialsFilter::set_received_credential(Some(
-        crate::credentials::types::Credential::with_credentials("token", "key"),
+        crate::credentials::types::Credential::with_credential("ticket", "key"),
     ));
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
@@ -365,7 +366,7 @@ fn test_get_credential_count_with_filter_creds() -> Result<()> {
 #[serial_test::serial(CredentialProvider, rdp)]
 fn test_get_credential_count_no_creds() -> Result<()> {
     let provider = create_provider();
-    provider.credential.write().unwrap().reset_token();
+    provider.credential.write().unwrap().reset_credential();
     filter::UDSCredentialsFilter::set_received_credential(None);
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(
@@ -378,7 +379,7 @@ fn test_get_credential_count_no_creds() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("token", "key");
+        .set_credential("ticket", "key");
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(cred_count, (1u32, 0u32, true.into())); // One credential
     Ok(())
@@ -392,7 +393,7 @@ fn test_get_credential_count_no_rdp() -> Result<()> {
         .credential
         .write()
         .unwrap()
-        .set_token("token", "key");
+        .set_credential("ticket", "key");
 
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(

@@ -96,7 +96,7 @@ impl UDSCredentialsProvider {
         // Get broker credential
         if let Some((ticket, key)) = broker::transform_broker_credential(&msg.broker_credential) {
             debug_dev!("Received broker credential, obtaining real credentials from broker");
-            self.credential.write().unwrap().set_token(&ticket, &key);
+            self.credential.write().unwrap().set_credential(&ticket, &key);
 
             // If we have an event manager, notify it of the credential change
             if let Some(event_manager) = self.get_event_manager()? {
@@ -111,7 +111,7 @@ impl UDSCredentialsProvider {
 
     fn async_creds_processor(&self) {
         let cred_provider = self.clone();
-        let auth_token: String = crate::globals::get_auth_token().unwrap_or_default();
+        let auth_token = broker::get_broker_info().actor_token().to_string();
         let pipe_name = globals::get_pipe_name();
         debug_dev!(
             "Starting async credentials receiver with pipe name: {}",
@@ -160,7 +160,7 @@ impl UDSCredentialsProvider {
     ) -> windows::core::Result<()> {
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
-                self.credential.write().unwrap().reset_token();
+                self.credential.write().unwrap().reset_credential();
                 self.credential.write().unwrap().set_usage_scenario(cpus);
                 Ok(())
             }
@@ -259,7 +259,7 @@ impl UDSCredentialsProvider {
         // So our Credential GetSerialization will be invoked to get
         // the credentials.
         // Here, only need to check if we have valid credentials to enable i
-        let has_valid_creds = self.credential.read().unwrap().has_valid_credentials();
+        let has_valid_creds = self.credential.read().unwrap().has_valid_credential();
         let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(

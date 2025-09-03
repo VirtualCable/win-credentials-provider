@@ -35,8 +35,8 @@ fn test_uds_credential_new() {
     setup_logging("debug");
     let credential = UDSCredential::new();
     let cred = credential.credential.read().unwrap();
-    assert!(cred.token.is_empty());
-    assert!(cred.key.is_empty());
+    assert!(cred.ticket().is_empty());
+    assert!(cred.key().is_empty());
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_serialization_logon_with_filter() {
 
 #[allow(dead_code)]
 fn do_test_serialization_logon(
-    token_or_username: &str,
+    ticket_or_username: &str,
     key_or_password: &str,
     domain: &str,
     mode: SerializeTestMode,
@@ -159,18 +159,20 @@ fn do_test_serialization_logon(
 
     match mode {
         SerializeTestMode::Broker => {
-            let mut cred = credential.credential.write().unwrap();
-            cred.token = token_or_username.to_string();
-            cred.key = key_or_password.to_string();
+            credential
+                .credential
+                .write()
+                .unwrap()
+                .set_credential(ticket_or_username, key_or_password);
         }
         SerializeTestMode::Values => {
             let mut values_guard = credential.values.write().unwrap();
             values_guard[UdsFieldId::Username as usize] =
-                helpers::username_with_domain(token_or_username, domain);
+                helpers::username_with_domain(ticket_or_username, domain);
             values_guard[UdsFieldId::Password as usize] = key_or_password.to_string();
         }
         SerializeTestMode::Filter => {
-            let cred = types::Credential::with_credentials(token_or_username, key_or_password);
+            let cred = types::Credential::with_credential(ticket_or_username, key_or_password);
             UDSCredentialsFilter::set_received_credential(Some(cred));
         }
     }
@@ -205,7 +207,7 @@ fn do_test_serialization_logon(
             mock.assert();
         }
         SerializeTestMode::Values => {
-            assert_eq!(_recv_username, token_or_username);
+            assert_eq!(_recv_username, ticket_or_username);
             assert_eq!(_recv_password, key_or_password);
             assert_eq!(_recv_domain, domain);
         }

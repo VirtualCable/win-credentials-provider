@@ -49,10 +49,11 @@ pub const UDSACTOR_REG_HKEY: HKEY = HKEY_LOCAL_MACHINE;
 pub const UDSACTOR_REG_PATH: PCWSTR = w!("SOFTWARE\\UDSActor");
 
 pub const BROKER_CREDENTIAL_PREFIX: &str = "uds-"; // Broker credential prefix
-pub const BROKER_CREDENTIAL_TOKEN_SIZE: usize = 48;
+// The ticket length must match the one defined on UDSBroker
+pub const BROKER_CREDENTIAL_TICKET_SIZE: usize = 48;
 pub const BROKER_CREDENTIAL_KEY_SIZE: usize = 32;
 pub const BROKER_CREDENTIAL_SIZE: usize =
-    4 + BROKER_CREDENTIAL_TOKEN_SIZE + BROKER_CREDENTIAL_KEY_SIZE; // Broker credential size, "uds-" + ticket(48) + key(32)
+    4 + BROKER_CREDENTIAL_TICKET_SIZE + BROKER_CREDENTIAL_KEY_SIZE; // Broker credential size, "uds-" + ticket(48) + key(32)
 pub const BROKER_URL_PATH: &str = "/uds/rest/actor/v3/ticket";
 
 // Global DLL References counter
@@ -60,9 +61,6 @@ pub static DLL_REF_COUNT: AtomicU32 = AtomicU32::new(0);
 
 // Global HINSTANCE of the DLL
 static DLL_INSTANCE: std::sync::OnceLock<SafeHInstance> = std::sync::OnceLock::new();
-
-// Auth token
-static AUTHTOKEN: OnceLock<RwLock<Option<String>>> = OnceLock::new();
 
 // PIPE NAME
 static PIPE_NAME: OnceLock<RwLock<Option<String>>> = OnceLock::new();
@@ -91,20 +89,6 @@ pub fn dll_add_ref() {
 /// Decrements the global DLL reference count
 pub fn dll_release() {
     DLL_REF_COUNT.fetch_sub(1, Ordering::SeqCst);
-}
-
-pub fn set_auth_token(token: String) {
-    AUTHTOKEN
-        .get_or_init(|| RwLock::new(Some(String::new())))
-        .write()
-        .unwrap()
-        .replace(token);
-}
-
-pub fn get_auth_token() -> Option<String> {
-    AUTHTOKEN
-        .get()
-        .and_then(|lock| lock.read().unwrap().clone())
 }
 
 pub fn get_pipe_name() -> String {

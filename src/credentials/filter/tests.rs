@@ -30,7 +30,7 @@ use super::*;
 
 use crate::{
     globals,
-    test_utils::{self, TEST_BROKER_TOKEN, TEST_ENCRYPTION_KEY},
+    test_utils::{self, TEST_BROKER_TICKET, TEST_ENCRYPTION_KEY},
 };
 
 #[test]
@@ -45,7 +45,7 @@ fn test_uds_credentials_filter_credentials() -> Result<()> {
 
     // Should be none
     assert!(creds.is_none());
-    UDSCredentialsFilter::set_received_credential(Some(types::Credential::with_credentials(
+    UDSCredentialsFilter::set_received_credential(Some(types::Credential::with_credential(
         "user", "pass",
     )));
     // Credential is available
@@ -125,8 +125,8 @@ fn test_uds_credential_filter_rdp() -> Result<()> {
 
     let filter = UDSCredentialsFilter::new();
 
-    UDSCredentialsFilter::set_received_credential(Some(types::Credential::with_credentials(
-        TEST_BROKER_TOKEN,
+    UDSCredentialsFilter::set_received_credential(Some(types::Credential::with_credential(
+        TEST_BROKER_TICKET,
         TEST_ENCRYPTION_KEY,
     )));
 

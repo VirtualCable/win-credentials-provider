@@ -145,7 +145,7 @@ impl UDSCredentialsFilter {
             );
             if let Some((ticket, key)) = crate::broker::transform_broker_credential(&username) {
                 UDSCredentialsFilter::set_received_credential(Some(
-                    types::Credential::with_credentials(&ticket, &key),
+                    types::Credential::with_credential(&ticket, &key),
                 ));
             }
         }

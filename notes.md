@@ -5,4 +5,3 @@
 
 # For use in debug builds:
 - `UDSCP_FAKE_CREDENTIALS`: If set, returns the specified credentials instead of querying the broker. username:password:domain
-- `UDS_FORCE_ACTOR_TOKEN`: If set, forces the use of the specified actor token instead of querying the broker.

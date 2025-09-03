@@ -91,7 +91,7 @@ fn test_uds_credential_filter_no_rdp() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(rdp)]
+#[serial_test::serial(broker, rdp)]
 fn test_uds_credential_filter_rdp() -> Result<()> {
     crate::utils::log::setup_logging("debug");
 

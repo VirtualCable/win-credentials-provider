@@ -26,7 +26,7 @@
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
-use crate::{debug_dev, broker, utils::lsa};
+use crate::{broker, debug_dev, globals, utils::lsa};
 use windows::{
     Win32::{
         Security::Authentication::Identity::{
@@ -53,19 +53,35 @@ pub const UDS_ACTOR_CONFIG_B64: &str = concat!(
     "b3N0X2NvbW1hbmQiOiBudWxsLCAibG9nX2xldmVsIjogMiwgImNvbmZpZyI6IG51bG",
     "wsICJkYXRhIjogbnVsbH0="
 );
+
+// Don't mind, i'ts not checked
 pub const UDS_TEST_ACTOR_TOKEN: &str = "own_token_test_value";
+
+#[derive(PartialEq)]
+pub enum ResponseType {
+    Valid,
+    Invalid,
+    Forbidden,
+}
 
 /// Creates a Fake broker:
 /// Note: Keep at least server alive, as long as you need to use the mock
 /// That is, ensure variable is on scope, or server will stop on drop
-pub fn create_fake_broker() -> (String, mockito::ServerGuard, mockito::Mock) {
+pub fn create_fake_broker(
+    response_type: ResponseType,
+) -> (String, mockito::ServerGuard, mockito::Mock) {
     let mut server = mockito::Server::new();
+    let (status_code, response_body) = match response_type {
+        ResponseType::Valid => (200, VALID_RESPONSE),
+        ResponseType::Invalid => (200, r#"{"error": "Invalid ticket"}"#),
+        ResponseType::Forbidden => (403, r#"{"error": "Forbidden"}"#),
+    };
 
     let mock = server
-        .mock("POST", "/credential")
-        .with_status(200)
+        .mock("POST", globals::BROKER_TICKET_PATH)
+        .with_status(status_code)
         .with_header("Content-Type", "application/json")
-        .with_body(VALID_RESPONSE)
+        .with_body(response_body)
         .match_request(|request| {
             let body = request
                 .body()
@@ -80,7 +96,7 @@ pub fn create_fake_broker() -> (String, mockito::ServerGuard, mockito::Mock) {
         })
         .create();
 
-    let url = server.url() + "/credential";
+    let url = server.url() + globals::BROKER_TICKET_PATH;
 
     broker::set_broker_info(&url, UDS_TEST_ACTOR_TOKEN, true); // Is http, so ssl does not mind here
 

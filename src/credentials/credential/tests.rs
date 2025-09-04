@@ -155,7 +155,7 @@ fn do_test_serialization_logon(
 
     // Create a fake broker, so the call to get credentials from broker does not fail
     // when testing the serialization
-    let (_url, _server, mock) = crate::test_utils::create_fake_broker();
+    let (_url, _server, mock) = crate::test_utils::create_fake_broker(crate::test_utils::ResponseType::Valid);
 
     match mode {
         SerializeTestMode::Broker => {

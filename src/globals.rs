@@ -54,7 +54,7 @@ pub const BROKER_CREDENTIAL_TICKET_SIZE: usize = 48;
 pub const BROKER_CREDENTIAL_KEY_SIZE: usize = 32;
 pub const BROKER_CREDENTIAL_SIZE: usize =
     4 + BROKER_CREDENTIAL_TICKET_SIZE + BROKER_CREDENTIAL_KEY_SIZE; // Broker credential size, "uds-" + ticket(48) + key(32)
-pub const BROKER_URL_PATH: &str = "/uds/rest/actor/v3/ticket";
+pub const BROKER_TICKET_PATH: &str = "/uds/rest/actor/v3/ticket/userservice";
 
 // Global DLL References counter
 pub static DLL_REF_COUNT: AtomicU32 = AtomicU32::new(0);

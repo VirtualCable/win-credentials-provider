@@ -276,7 +276,7 @@ fn read_broker_info() -> Result<BrokerInfo> {
     Ok(BrokerInfo {
         url: format!(
             "https://{}/{}",
-            globals::BROKER_URL_PATH,
+            globals::BROKER_TICKET_PATH,
             json.get("url").and_then(|v| v.as_str()).unwrap_or("")
         ),
         verify_ssl: json
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     #[serial_test::serial(broker)]
     fn test_get_credentials_from_broker_valid_info() {
-        let (_url, _server, mock) = utils::create_fake_broker();
+        let (_url, _server, mock) = utils::create_fake_broker(utils::ResponseType::Valid);
         let result =
             get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
         assert!(result.is_ok());
@@ -320,6 +320,26 @@ mod tests {
         assert_eq!(password, utils::VALID_CREDS.1);
         assert_eq!(domain, utils::VALID_CREDS.2);
 
+        mock.assert();
+    }
+
+    #[test]
+    #[serial_test::serial(broker)]
+    fn test_get_credentials_from_broker_invalid() {
+        let (_url, _server, mock) = utils::create_fake_broker(utils::ResponseType::Invalid);
+        let result =
+            get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
+        assert!(result.is_err());
+        mock.assert();
+    }
+
+    #[test]
+    #[serial_test::serial(broker)]
+    fn test_get_credentials_from_broker_forbidden() {
+        let (_url, _server, mock) = utils::create_fake_broker(utils::ResponseType::Forbidden);
+        let result =
+            get_credentials_from_broker(utils::TEST_BROKER_CREDENTIAL, utils::TEST_ENCRYPTION_KEY);
+        assert!(result.is_err());
         mock.assert();
     }
 

@@ -67,6 +67,7 @@ impl UDSCredentialsFilter {
     }
 
     pub fn set_received_credential(cred: Option<types::Credential>) {
+        debug_dev!("Setting received credential: {:?}", cred);
         let mut recv_guard: std::sync::RwLockWriteGuard<'_, Option<types::Credential>> =
             RECV_CRED.write().unwrap();
         *recv_guard = cred;
@@ -81,9 +82,17 @@ impl UDSCredentialsFilter {
         cproviders: u32,
     ) -> windows::core::Result<()> {
         // If we come from a remote session, and we have a valid UDS credential, and we can contact with UDS Broker
-        let must_be_our_cred = UDSCredentialsFilter::has_received_credential() && broker::get_broker_info().is_valid();
+        let must_be_our_cred =
+            UDSCredentialsFilter::has_received_credential() && broker::get_broker_info().is_valid();
 
-        debug_dev!("Filter called. must_be_our_cred: {}  dwflags: {}  cpus: {:?}", must_be_our_cred, dwflags, cpus);
+        debug_dev!(
+            "Filter called. must_be_our_cred: {} && {} = {}  dwflags: {}  cpus: {:?}",
+            UDSCredentialsFilter::has_received_credential(),
+            broker::get_broker_info().is_valid(),
+            must_be_our_cred,
+            dwflags,
+            cpus
+        );
 
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {

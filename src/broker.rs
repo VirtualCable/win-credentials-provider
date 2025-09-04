@@ -41,9 +41,9 @@ use windows::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::{
-    globals,
+    debug_dev, globals,
     utils::{
-        crypt,
+        crypt, helpers,
         http_client::HttpRequestClient,
         log::{error, warn},
     },
@@ -78,6 +78,11 @@ impl BrokerInfo {
     }
 
     pub fn is_valid(&self) -> bool {
+        debug_dev!(
+            "Checking broker info validity: url: {}, actor_token: {}",
+            self.url,
+            self.actor_token
+        );
         !self.url.is_empty() && !self.actor_token.is_empty()
     }
 }
@@ -107,14 +112,25 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
     // Allow us to set an environment var to return fixed creds
     // when debugging. Contains username:password:domain
     #[cfg(debug_assertions)]
-    {
-        let debug_data = std::env::var("UDSCP_FAKE_CREDENTIALS").unwrap_or_default();
+    if let Ok(debug_data) = std::env::var("UDSCP_FAKE_CREDENTIALS") {
+        debug_dev!("Using UDSCP_FAKE_CREDENTIALS for credentials");
         let parts: Vec<&str> = debug_data.split(':').collect();
         if parts.len() == 3 {
+            debug_dev!("Parsed UDSCP_FAKE_CREDENTIALS successfully");
             let (username, password, domain) = (
                 parts[0].to_string(),
                 parts[1].to_string(),
                 parts[2].to_string(),
+            );
+            debug_dev!(
+                "Using fake credentials: username: {}, password: {}, domain: {}",
+                username,
+                if password.is_empty() {
+                    "(empty)"
+                } else {
+                    "******"
+                },
+                domain
             );
 
             let domain = if domain.is_empty() {
@@ -141,11 +157,16 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
     // If "error" is present, there is an error on the response
     // Inside result is our username, password and domain
 
+    debug_dev!(
+        "Requesting credentials from broker at {}",
+        broker_info.url()
+    );
     match client.post_json::<serde_json::Value, serde_json::Value>(broker_info.url(), &_json_body) {
         // All data in response is base 64 encoded, because it¡s encrypted
         // Note, in a future, can contain a version field, but currently it does not
         // Because is not needed. No field = v1
         Ok(response) => {
+            debug_dev!("Response from broker: {:?}", response);
             // Check first if there is an error
             if let Some(err) = response.get("error").and_then(|v| v.as_str()) {
                 warn!("Error obtaining credentials from broker: {}", err);
@@ -178,6 +199,23 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
             let password = crypt::decrypt(password, key, 2).unwrap_or_default();
             let domain = crypt::decrypt(domain, key, 3).unwrap_or_default();
 
+            let domain = if domain.is_empty() {
+                helpers::get_computer_name()
+            } else {
+                domain
+            };
+
+            debug_dev!(
+                "Decrypted credentials: username: #{}#, password: #{}#, domain: #{}#",
+                username,
+                if password.is_empty() {
+                    "(empty)"
+                } else {
+                    "******"
+                },
+                domain
+            );
+
             Ok((
                 username.to_string(),
                 password.to_string(),
@@ -196,6 +234,7 @@ pub fn transform_broker_credential(broker_credential: &str) -> Option<(String, S
     if broker_credential.starts_with(globals::BROKER_CREDENTIAL_PREFIX)
         && broker_credential.len() == globals::BROKER_CREDENTIAL_SIZE
     {
+        debug_dev!("Broker credential detected");
         let ticket = &broker_credential[4..4 + globals::BROKER_CREDENTIAL_TICKET_SIZE];
         let key = &broker_credential[4 + globals::BROKER_CREDENTIAL_TICKET_SIZE..];
         Some((ticket.to_string(), key.to_string()))
@@ -224,6 +263,7 @@ pub fn get_broker_info() -> BrokerInfo {
 // Reads the configuration from the registry key, that is a base64 json
 // Extracts the json and returns the "own_key" string value
 fn read_broker_info() -> Result<BrokerInfo> {
+    debug_dev!("Reading broker info from registry");
     let buffer = unsafe {
         let mut cfg_key = HKEY::default();
         RegOpenKeyExW(
@@ -235,6 +275,7 @@ fn read_broker_info() -> Result<BrokerInfo> {
         )
         .ok()?;
 
+        debug_dev!("Successfully opened registry key");
         let mut data_type = REG_NONE;
         let mut data_len: u32 = 0;
 
@@ -276,8 +317,8 @@ fn read_broker_info() -> Result<BrokerInfo> {
     Ok(BrokerInfo {
         url: format!(
             "https://{}/{}",
+            json.get("host").and_then(|v| v.as_str()).unwrap_or(""),
             globals::BROKER_TICKET_PATH,
-            json.get("url").and_then(|v| v.as_str()).unwrap_or("")
         ),
         verify_ssl: json
             .get("check_certificate")
@@ -299,7 +340,7 @@ mod tests {
     #[test]
     fn test_is_broker_credential() {
         log::setup_logging("debug");
-        let cred = transform_broker_credential(utils::TEST_BROKER_CREDENTIAL).unwrap();  // fail if None
+        let cred = transform_broker_credential(utils::TEST_BROKER_CREDENTIAL).unwrap(); // fail if None
         assert_eq!(cred.0, utils::TEST_BROKER_TICKET);
         assert_eq!(cred.1, utils::TEST_ENCRYPTION_KEY);
         assert!(transform_broker_credential("uds-short").is_none());

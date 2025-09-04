@@ -309,6 +309,7 @@ impl UDSCredential {
             (username, password, domain)
         } else {
             // Get from broker or fail, because are our credentials and must be valid
+            debug_dev!("Getting credentials from broker using ticket and key");
             let response = broker::get_credentials_from_broker(cred.ticket(), cred.key())?;
 
             (response.0, response.1, response.2)

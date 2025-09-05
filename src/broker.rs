@@ -191,9 +191,9 @@ pub fn get_credentials_from_broker(ticket: &str, key: &str) -> Result<(String, S
                 .unwrap_or("");
             let domain = result.get("domain").and_then(|v| v.as_str()).unwrap_or("");
 
-            // Decript values
+            // Decrypt values
             // Important!!
-            // nonce are 1 for username, 2 for password and 3 for domain.. The key is ephemeral, only used once...
+            // nonce is 1 for username, 2 for password and 3 for domain.. The key is ephemeral, only used once...
             // Encryption is AES256GCM
             let username = crypt::decrypt(username, key, 1).unwrap_or_default();
             let password = crypt::decrypt(password, key, 2).unwrap_or_default();

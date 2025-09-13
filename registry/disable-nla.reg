@@ -13,3 +13,7 @@ Windows Registry Editor Version 5.00
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services]
 "UserAuthentication"=dword:00000000
 "fDenyTSConnections"=dword:00000000
+
+; Negotiate the conection security level
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services]
+"SecurityLayer"=dword:00000001

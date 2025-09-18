@@ -137,7 +137,7 @@ macro_rules! debug_dev {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
         {
-            tracing::info!($($arg)*);
+            tracing::info!(target: "dev", $($arg)*);
             let s = format!($($arg)*);
             $crate::utils::log::output_debug_string(&s);
         }

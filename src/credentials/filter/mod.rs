@@ -158,6 +158,8 @@ impl UDSCredentialsFilter {
                 UDSCredentialsFilter::set_received_credential(Some(
                     types::Credential::with_credential(&ticket, &key),
                 ));
+            } else {
+                return Err(E_INVALIDARG.into());
             }
         }
 

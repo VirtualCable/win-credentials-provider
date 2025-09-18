@@ -82,23 +82,23 @@ impl UDSCredentialsFilter {
         cproviders: u32,
     ) -> windows::core::Result<()> {
         // If we come from a remote session, and we have a valid UDS credential, and we can contact with UDS Broker
-        let must_be_our_cred =
+        let is_our_credential =
             UDSCredentialsFilter::has_received_credential() && broker::get_broker_info().is_valid();
 
         debug_dev!(
             "Filter called. must_be_our_cred: {} && {} = {}  dwflags: {}  cpus: {:?}",
             UDSCredentialsFilter::has_received_credential(),
             broker::get_broker_info().is_valid(),
-            must_be_our_cred,
+            is_our_credential,
             dwflags,
             cpus
         );
 
         match cpus {
             CPUS_LOGON | CPUS_UNLOCK_WORKSTATION => {
-                if !must_be_our_cred {
+                if !is_our_credential {
                     debug_dev!("Not an RDP session, leaving the providers list as is");
-                    // If not RDP, keep the rgballow as is
+                    // do not filter anything, just return
                     return Ok(());
                 }
                 // In logon or unlock workstation, we only allow our provider if it's not an RDP session
@@ -127,7 +127,7 @@ impl UDSCredentialsFilter {
         pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        debug_dev!("UpdateRemoteCredential called. {:?}", pcpcsin);
+        debug_dev!("UpdateRemoteCredential called. {:?}", unsafe{ &*pcpcsin });
 
         unsafe {
             let mut rgb_serialization = vec![0; (*pcpcsin).cbSerialization as usize];
@@ -140,10 +140,12 @@ impl UDSCredentialsFilter {
             // so logon points to the same memory as the packed structure
             let logon =
                 lsa::kerb_interactive_unlock_logon_unpack_in_place(rgb_serialization.as_ptr() as _);
+
             // Username should be our token, password our shared_secret with our server
             // and domain is simply ignored :)
             let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
-            let password = lsa::lsa_unicode_string_to_string(&logon.Logon.Password);
+            // Note that credential can be unprotected or protected, so we use our utils to unprotect if needed
+            let password = lsa::unprotect_credential(logon.Logon.Password)?;
             let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
             debug_dev!(

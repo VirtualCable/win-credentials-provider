@@ -28,15 +28,16 @@ Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
 use widestring::U16CString;
 use windows::{
-    Win32::{
-        Foundation::{E_OUTOFMEMORY, HANDLE},
-        Security::Authentication::Identity::{
-            KERB_INTERACTIVE_UNLOCK_LOGON, LSA_STRING, LSA_UNICODE_STRING, LsaConnectUntrusted,
-            LsaDeregisterLogonProcess, LsaLookupAuthenticationPackage, NEGOSSP_NAME_A,
+    core::*, Win32::{
+        Foundation::{E_OUTOFMEMORY, HANDLE, WIN32_ERROR},
+        Security::{
+            Authentication::Identity::{
+                LsaConnectUntrusted, LsaDeregisterLogonProcess, LsaLookupAuthenticationPackage, KERB_INTERACTIVE_UNLOCK_LOGON, LSA_STRING, LSA_UNICODE_STRING, NEGOSSP_NAME_A
+            },
+            Credentials::{CredIsProtectedW, CredUnprotectW, CredUnprotected},
         },
         System::Com::CoTaskMemAlloc,
-    },
-    core::*,
+    }
 };
 
 use crate::debug_dev;
@@ -137,6 +138,7 @@ impl LsaString {
 }
 
 pub fn lsa_unicode_string_to_string(lsa: &LSA_UNICODE_STRING) -> String {
+    debug_dev!("Converting LSA_UNICODE_STRING: {:?}", lsa);
     if lsa.Length == 0 || lsa.Buffer.is_null() {
         return String::new();
     }
@@ -304,6 +306,51 @@ pub fn retrieve_negotiate_auth_package() -> windows::core::Result<u32> {
         Err(status.into())
     } else {
         Ok(authenticationpackage)
+    }
+}
+
+// Umprotects a credential if it is protected, otherwise returns the same string
+pub fn unprotect_credential(cred: LSA_UNICODE_STRING) -> Result<String> {
+    unsafe {
+        let mut prot_type = CredUnprotected;
+        _ = CredIsProtectedW(PCWSTR(cred.Buffer.0), &mut prot_type);
+        debug_dev!("Credential protected? type={:?}", prot_type);
+        if prot_type != CredUnprotected {
+            let mut buf_size = 0u32;
+            // This will fail, but buf_size will contain the needed size
+            _ = CredUnprotectW(
+                false,
+                std::slice::from_raw_parts(cred.Buffer.0, (cred.Length / 2) as usize),
+                None,
+                &mut buf_size,
+            );
+            if buf_size > 0 {
+                let mut buf: Vec<u16> = vec![0; buf_size as usize];
+                CredUnprotectW(
+                    false,
+                    std::slice::from_raw_parts(cred.Buffer.0, (cred.Length / 2) as usize),
+                    Some(PWSTR(buf.as_mut_ptr())),
+                    &mut buf_size,
+                )?;
+                if buf_size > 0 {
+                    Ok(String::from_utf16_lossy(&buf[..(buf_size-1) as usize]))
+                } else {
+                    debug_dev!("CredUnprotectW failed");
+                    Err(Error::new(
+                        HRESULT::from_thread(),
+                        "Failed to unprotect credential",
+                    ))
+                }
+            } else {
+                debug_dev!("CredUnprotectW returned 0 size");
+                Err(Error::new(
+                    HRESULT::from_thread(),
+                    "Failed to unprotect credential",
+                ))
+            }
+        } else {
+            Ok(lsa_unicode_string_to_string(&cred))
+        }
     }
 }
 

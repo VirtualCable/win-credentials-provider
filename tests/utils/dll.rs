@@ -75,7 +75,7 @@ pub fn load() -> HMODULE {
 pub fn get_symbol(module: &HMODULE, name: &str) -> Result<unsafe extern "system" fn() -> HRESULT> {
     let cstr = match std::ffi::CString::new(name) {
         Ok(cstr) => cstr,
-        Err(_) => return Err(Error::from_win32()),
+        Err(_) => return Err(Error::from_thread()),
     };
     let pcstr = PCSTR::from_raw(cstr.as_ptr() as *const u8);
 
@@ -83,7 +83,7 @@ pub fn get_symbol(module: &HMODULE, name: &str) -> Result<unsafe extern "system"
         #[allow(clippy::missing_transmute_annotations)]
         Ok(unsafe { std::mem::transmute(addr) })
     } else {
-        Err(Error::from_win32())
+        Err(Error::from_thread())
     }
 }
 

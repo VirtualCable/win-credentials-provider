@@ -26,21 +26,23 @@
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
-use windows::Win32::{
-    Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE},
-    Security::{
-        ACL, ACL_REVISION, AddAccessAllowedAce, GetTokenInformation, InitializeAcl,
-        InitializeSecurityDescriptor, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
-        SECURITY_DESCRIPTOR, SetSecurityDescriptorDacl, TOKEN_QUERY, TOKEN_USER, TokenUser,
+use windows::{
+    Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE},
+        Security::{
+            ACL, ACL_REVISION, AddAccessAllowedAce, GetTokenInformation, InitializeAcl,
+            InitializeSecurityDescriptor, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES,
+            SECURITY_DESCRIPTOR, SetSecurityDescriptorDacl, TOKEN_QUERY, TOKEN_USER, TokenUser,
+        },
+        System::{
+            SystemServices::SECURITY_DESCRIPTOR_REVISION,
+            Threading::{GetCurrentProcess, OpenProcessToken},
+            WindowsProgramming::GetComputerNameW,
+        },
+        UI::WindowsAndMessaging::{GetSystemMetrics, SM_REMOTESESSION},
     },
-    System::{
-        SystemServices::SECURITY_DESCRIPTOR_REVISION,
-        Threading::{GetCurrentProcess, OpenProcessToken},
-        WindowsProgramming::GetComputerNameW,
-    },
-    UI::WindowsAndMessaging::{GetSystemMetrics, SM_REMOTESESSION},
+    core::*,
 };
-use windows::core::*;
 
 // Helper
 #[inline]

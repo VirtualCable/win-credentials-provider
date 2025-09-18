@@ -73,7 +73,6 @@ pub fn setup_logging(level: &str) {
             .with_level(true)
             .with_filter(EnvFilter::new(format!("{},flow=off", level)));
 
-        // Secondary log file only in debug
         LOG_FLOW_ENABLED.store(
             std::env::var("UDSCP_ENABLE_FLOW_LOG").unwrap_or_default() == "1",
             std::sync::atomic::Ordering::Relaxed,

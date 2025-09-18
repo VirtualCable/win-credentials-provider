@@ -56,7 +56,7 @@ impl CredentialFieldDescriptor {
                 as *mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR;
 
             if ptr.is_null() {
-                return Err(windows::core::Error::from_win32());
+                return Err(windows::core::Error::from_thread());
             }
 
             (*ptr).dwFieldID = self.field_id;
@@ -66,7 +66,7 @@ impl CredentialFieldDescriptor {
                 Ok(w) => w,
                 Err(_) => {
                     // Log, fallback, o abortar según el caso
-                    return Err(windows::core::Error::from_win32());
+                    return Err(windows::core::Error::from_thread());
                 }
             };
             match SHStrDupW(PWSTR(wide_label.as_ptr() as _)) {

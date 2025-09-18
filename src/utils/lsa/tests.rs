@@ -28,11 +28,12 @@ Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
 use super::*;
 
-use crate::utils::log::setup_logging;
+use crate::utils::log::{setup_logging, info};
 
-use windows::Win32::Security::Authentication::Identity::{
-    KERB_INTERACTIVE_LOGON, KerbInteractiveLogon,
-};
+use windows::{Win32::Security::{
+    Authentication::Identity::{KERB_INTERACTIVE_LOGON, KerbInteractiveLogon},
+    Credentials::{CredProtectW, CredTrustedProtection},
+},core::PWSTR};
 
 fn kerb_interactive_unlock_test(username: &str, password: &str, domain: &str) {
     setup_logging("debug");
@@ -159,4 +160,31 @@ fn test_lsa_unicode_string_owned() {
     let lsa_ref = lsa_owned.as_lsa();
     let converted = lsa_unicode_string_to_string(lsa_ref);
     assert_eq!(s, converted);
+}
+
+#[test]
+fn test_protect_unprotect_credential() {
+    setup_logging("debug");
+    let original_utf16: Vec<u16> = "This is a test string".encode_utf16().chain(std::iter::once(0)).collect();
+    let mut protected: Vec<u16> = vec![0; 512]; // Allocate more space for protection
+    let mut protected_len = protected.len() as u32;
+    let mut protection_type = CredTrustedProtection;
+    unsafe {
+        CredProtectW(
+            true,
+            &original_utf16,
+            PWSTR::from_raw(protected.as_mut_ptr()),
+            &mut protected_len,
+            Some(&mut protection_type),
+        ).unwrap();
+    }
+    info!("Protected length: {}", protected_len);
+    let prot_cred = LSA_UNICODE_STRING {
+        Length: (protected_len - 2) as u16, // Exclude null terminator
+        MaximumLength: protected_len as u16,
+        Buffer: PWSTR::from_raw(protected.as_mut_ptr()),
+    };
+    let unprotected = unprotect_credential(prot_cred).unwrap();
+    info!("Unprotected: {}", unprotected);
+    assert_eq!(unprotected, "This is a test string");
 }

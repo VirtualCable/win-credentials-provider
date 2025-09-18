@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # https://microsoft.github.io/windows-rs/features/
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.0", features = [
     # Networking
     "Win32_Networking_WinHttp",
 
@@ -29,7 +29,6 @@ windows = { version = "0.61.3", features = [
     "Win32_System_WindowsProgramming",
     "Win32_System_Threading",
     "Win32_Storage_EnhancedStorage",
-    "Win32_System_Registry",
 
     "Win32_System_Pipes",
     "Win32_Storage_FileSystem",
@@ -44,7 +43,7 @@ windows = { version = "0.61.3", features = [
     "Win32_Security_Authentication_Identity"
 ] }
 # To avoid version conflicts with other imported packages, force this version
-windows-core = "0.61.2"
+windows-core = "0.62.0"
 
 # crypt part
 base64 = "0.22.1"
@@ -54,7 +53,7 @@ byteorder = "1.5.0"
 anyhow = "1.0.99"
 widestring = "1.2.0"
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+serde_json = "1.0.145"
 # For Protocol Buffers
 prost = "0.14.1"
 prost-types = "0.14.1"

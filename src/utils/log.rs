@@ -26,14 +26,10 @@
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
-use std::{fs::OpenOptions, path::PathBuf, sync::OnceLock};
+use std::{fs, fs::OpenOptions, io, path::PathBuf, sync::OnceLock};
 use tracing_subscriber::{
     EnvFilter, Layer, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
-
-use widestring::U16CString;
-use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
-use windows::core::PCWSTR;
 
 // Reexport to avoid using crate names for tracing
 pub use tracing::{debug, error, info, trace, warn};
@@ -45,27 +41,51 @@ pub static FLOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::Ato
 pub static LAST_STEP: std::sync::OnceLock<std::sync::RwLock<std::time::Instant>> =
     std::sync::OnceLock::new();
 
-struct ReopenOnWrite {
+struct RotatingWriter {
     path: PathBuf,
+    max_size: u64,    // Max size in bytes before rotation
+    max_files: usize, // Number of rotations to keep
 }
 
-impl<'a> fmt::MakeWriter<'a> for ReopenOnWrite {
-    type Writer = std::fs::File;
+impl RotatingWriter {
+    fn rotate_if_needed(&self) -> io::Result<()> {
+        if let Ok(meta) = fs::metadata(&self.path)
+            && meta.len() >= self.max_size
+        {
+            // Remove last if needed
+            if self.max_files > 1 {
+                let last = self.path.with_extension(format!("log.{}", self.max_files));
+                let _ = fs::remove_file(&last);
+                // Rename in reverse order
+                for i in (1..self.max_files).rev() {
+                    let src = self.path.with_extension(format!("log.{}", i));
+                    let dst = self.path.with_extension(format!("log.{}", i + 1));
+                    let _ = fs::rename(&src, &dst);
+                }
+                // Rename current to .log.1
+                let rotated = self.path.with_extension("log.1");
+                let _ = fs::rename(&self.path, rotated);
+            } else {
+                // if max_files is 1, just remove current
+                let _ = fs::remove_file(&self.path);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'a> fmt::MakeWriter<'a> for RotatingWriter {
+    type Writer = fs::File;
 
     fn make_writer(&'a self) -> Self::Writer {
-        // Always open in append mode, creating if it does not exist
+        // Rotate if needed
+        let _ = self.rotate_if_needed();
+        // Always open in append mode, creating it if it doesn't exist
         OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
             .unwrap_or_else(|e| panic!("Failed to open log file {:?}: {}", self.path, e))
-    }
-}
-
-pub fn output_debug_string(s: &str) {
-    {
-        let wide = U16CString::from_str(s).unwrap_or_default();
-        unsafe { OutputDebugStringW(PCWSTR(wide.as_ptr())) };
     }
 }
 
@@ -76,8 +96,10 @@ pub fn setup_logging(level: &str) {
 
     LOGGER_INIT.get_or_init(|| {
         let main_layer = fmt::layer()
-            .with_writer(ReopenOnWrite {
+            .with_writer(RotatingWriter {
                 path: std::path::Path::new(&log_path).join("uds-cred-prov.log"),
+                max_size: 16 * 1024 * 1024, // 16 MB
+                max_files: 2,
             })
             .with_ansi(false)
             .with_target(true)
@@ -92,8 +114,10 @@ pub fn setup_logging(level: &str) {
         let use_flow_log = LOG_FLOW_ENABLED.load(std::sync::atomic::Ordering::Relaxed);
         if use_flow_log {
             let flow_layer = fmt::layer()
-                .with_writer(ReopenOnWrite {
+                .with_writer(RotatingWriter {
                     path: std::path::Path::new(&log_path).join("uds-cred-prov-flow.log"),
+                    max_size: 16 * 1024 * 1024, // 10 MB
+                    max_files: 2,
                 })
                 .with_ansi(false)
                 .with_target(true)
@@ -146,7 +170,6 @@ macro_rules! debug_dev {
         {
             let s = format!($($arg)*);
             tracing::info!(target: "dev", "{}", s);
-            $crate::utils::log::output_debug_string(&s);
         }
     };
 }

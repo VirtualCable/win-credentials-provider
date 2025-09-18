@@ -26,8 +26,10 @@
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
-use std::{fs::OpenOptions, sync::OnceLock};
-use tracing_subscriber::{filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
+use std::{fs::OpenOptions, path::PathBuf, sync::OnceLock};
+use tracing_subscriber::{
+    EnvFilter, Layer, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 use widestring::U16CString;
 use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
@@ -43,6 +45,23 @@ pub static FLOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::Ato
 pub static LAST_STEP: std::sync::OnceLock<std::sync::RwLock<std::time::Instant>> =
     std::sync::OnceLock::new();
 
+struct ReopenOnWrite {
+    path: PathBuf,
+}
+
+impl<'a> fmt::MakeWriter<'a> for ReopenOnWrite {
+    type Writer = std::fs::File;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        // Always open in append mode, creating if it does not exist
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .unwrap_or_else(|e| panic!("Failed to open log file {:?}: {}", self.path, e))
+    }
+}
+
 pub fn output_debug_string(s: &str) {
     {
         let wide = U16CString::from_str(s).unwrap_or_default();
@@ -51,23 +70,15 @@ pub fn output_debug_string(s: &str) {
 }
 
 pub fn setup_logging(level: &str) {
-    // if UDSCP_LOG_LEVEL is on env, use it intead of level
     let level = std::env::var("UDSCP_LOG_LEVEL").unwrap_or_else(|_| level.to_string());
-    let log_path = std::env::var("UDSCP_LOG_PATH").unwrap_or_else(|_| {
-        std::env::temp_dir().to_string_lossy().into()
-    });
+    let log_path = std::env::var("UDSCP_LOG_PATH")
+        .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().into());
 
-    // Bridge log crate logs to tracing
     LOGGER_INIT.get_or_init(|| {
-        // Main log file
-        let main_file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(std::path::Path::new(&log_path).join("uds-cred-prov.log"))
-            .expect("Failed to open main log file");
-
         let main_layer = fmt::layer()
-            .with_writer(main_file)
+            .with_writer(ReopenOnWrite {
+                path: std::path::Path::new(&log_path).join("uds-cred-prov.log"),
+            })
             .with_ansi(false)
             .with_target(true)
             .with_level(true)
@@ -77,22 +88,18 @@ pub fn setup_logging(level: &str) {
             std::env::var("UDSCP_ENABLE_FLOW_LOG").unwrap_or_default() == "1",
             std::sync::atomic::Ordering::Relaxed,
         );
+
         let use_flow_log = LOG_FLOW_ENABLED.load(std::sync::atomic::Ordering::Relaxed);
         if use_flow_log {
             let flow_layer = fmt::layer()
-                .with_writer(
-                    OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(std::path::Path::new(&log_path).join("uds-cred-prov-flow.log"))
-                        .expect("Failed to open flow log file"),
-                )
+                .with_writer(ReopenOnWrite {
+                    path: std::path::Path::new(&log_path).join("uds-cred-prov-flow.log"),
+                })
                 .with_ansi(false)
                 .with_target(true)
                 .with_level(true)
                 .with_filter(filter_fn(|meta| meta.target() == "flow"));
 
-            // Register
             tracing_subscriber::registry()
                 .with(main_layer)
                 .with(flow_layer)
@@ -108,7 +115,6 @@ pub fn setup_logging(level: &str) {
         info!("Logging initialized with level: {}", level);
     });
 }
-
 pub fn reset_flow_counter() {
     FLOW_COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
     LAST_STEP

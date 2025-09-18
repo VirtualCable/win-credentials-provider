@@ -49,12 +49,12 @@ pub extern "system" fn DllMain(
             DLL_PROCESS_ATTACH => {
                 let _ = DisableThreadLibraryCalls(hinst_dll.into());
                 utils::log::setup_logging("info");
-                debug_dev!("DLL_PROCESS_ATTACH");
+                debug_flow!("DLL_PROCESS_ATTACH");
                 // Initialize the broker info
             }
             DLL_PROCESS_DETACH => {
                 // Cleanup if needed
-                debug_dev!("DLL_PROCESS_DETACH");
+                debug_flow!("DLL_PROCESS_DETACH");
             }
             DLL_THREAD_ATTACH => {}
             DLL_THREAD_DETACH => {}

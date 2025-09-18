@@ -127,7 +127,7 @@ impl UDSCredentialsFilter {
         pcpcsin: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         _pcpcsout: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        debug_dev!("UpdateRemoteCredential called. {:?}", unsafe{ &*pcpcsin });
+        debug_dev!("UpdateRemoteCredential called. {:?}", unsafe { &*pcpcsin });
 
         unsafe {
             let mut rgb_serialization = vec![0; (*pcpcsin).cbSerialization as usize];
@@ -184,6 +184,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         cproviders: u32,
     ) -> windows::core::Result<()> {
         debug_flow!("ICredentialProviderFilter::Filter");
+
         self.filter(cpus, dwflags, rgclsidproviders, rgballow, cproviders)
     }
 

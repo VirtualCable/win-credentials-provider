@@ -33,7 +33,7 @@ use windows::{
     core::*,
 };
 
-use crate::globals::{dll_add_ref, dll_release};
+use crate::{debug_flow, globals::{dll_add_ref, dll_release}};
 
 // Implementaciones concretas
 use crate::credentials::filter::UDSCredentialsFilter;
@@ -64,6 +64,7 @@ impl IClassFactory_Impl for ClassFactory_Impl {
         riid: *const GUID,
         ppvobject: *mut *mut core::ffi::c_void,
     ) -> Result<()> {
+        debug_flow!("ClassFactory::CreateInstance called");
         // Aggregation not supported
         if !punkouter.is_null() {
             return Err(CLASS_E_NOAGGREGATION.into());
@@ -96,6 +97,7 @@ impl IClassFactory_Impl for ClassFactory_Impl {
     }
 
     fn LockServer(&self, f_lock: BOOL) -> Result<()> {
+        debug_flow!("ClassFactory::LockServer called with {f_lock:?}");
         if f_lock.as_bool() {
             dll_add_ref();
         } else {

@@ -27,7 +27,7 @@
 Author: Adolfo Gómez, dkmaster at dkmon dot com
 */
 use std::{fs::OpenOptions, sync::OnceLock};
-use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
 use widestring::U16CString;
 use windows::Win32::System::Diagnostics::Debug::OutputDebugStringW;
@@ -90,7 +90,7 @@ pub fn setup_logging(level: &str) {
                 .with_ansi(false)
                 .with_target(true)
                 .with_level(true)
-                .with_filter(EnvFilter::new("flow=debug"));
+                .with_filter(filter_fn(|meta| meta.target() == "flow"));
 
             // Register
             tracing_subscriber::registry()
@@ -126,7 +126,8 @@ macro_rules! debug_flow {
                 if count == 1 {
                     tracing::info!(target: "flow", "----------------------------------------");
                 }
-                tracing::info!(target: "flow", "[#{count:5}][{:>5} ms] {}", last_guard.read().unwrap().elapsed().as_millis(), format_args!($($arg)*));
+                let s = format!($($arg)*);
+                tracing::info!(target: "flow", "[#{count:5}][{:>5} ms] {}", last_guard.read().unwrap().elapsed().as_millis(), s);
                 *last_guard.write().unwrap() = std::time::Instant::now();
             }
     }};
@@ -137,8 +138,8 @@ macro_rules! debug_dev {
     ($($arg:tt)*) => {
         #[cfg(debug_assertions)]
         {
-            tracing::info!(target: "dev", $($arg)*);
             let s = format!($($arg)*);
+            tracing::info!(target: "dev", "{}", s);
             $crate::utils::log::output_debug_string(&s);
         }
     };

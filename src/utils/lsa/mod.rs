@@ -29,7 +29,7 @@ Author: Adolfo Gómez, dkmaster at dkmon dot com
 use widestring::U16CString;
 use windows::{
     core::*, Win32::{
-        Foundation::{E_OUTOFMEMORY, HANDLE, WIN32_ERROR},
+        Foundation::{E_OUTOFMEMORY, HANDLE},
         Security::{
             Authentication::Identity::{
                 LsaConnectUntrusted, LsaDeregisterLogonProcess, LsaLookupAuthenticationPackage, KERB_INTERACTIVE_UNLOCK_LOGON, LSA_STRING, LSA_UNICODE_STRING, NEGOSSP_NAME_A

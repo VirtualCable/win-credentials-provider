@@ -145,13 +145,12 @@ impl UDSCredentialsFilter {
             // and domain is simply ignored :)
             let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
             // Note that credential can be unprotected or protected, so we use our utils to unprotect if needed
-            let password = lsa::unprotect_credential(logon.Logon.Password)?;
+            // let password = lsa::unprotect_credential(logon.Logon.Password)?;
             let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
             debug_dev!(
-                "UpdateRemoteCredential: username: {}, password: {}, domain: {}",
+                "UpdateRemoteCredential: username: {}, domain: {}",
                 username,
-                password,
                 domain
             );
             if let Some((ticket, key)) = crate::broker::transform_broker_credential(&username) {
@@ -159,7 +158,7 @@ impl UDSCredentialsFilter {
                     types::Credential::with_credential(&ticket, &key),
                 ));
             } else {
-                return Err(E_INVALIDARG.into());
+                return Err(E_INVALIDARG.into());  // Not recognized credential
             }
         }
 

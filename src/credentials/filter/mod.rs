@@ -76,7 +76,7 @@ impl UDSCredentialsFilter {
     fn filter(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        dwflags: u32,
+        _dwflags: u32,
         rgclsidproviders: *const windows::core::GUID,
         rgballow: *mut windows::core::BOOL,
         cproviders: u32,
@@ -90,7 +90,7 @@ impl UDSCredentialsFilter {
             UDSCredentialsFilter::has_received_credential(),
             broker::get_broker_info().is_valid(),
             is_our_credential,
-            dwflags,
+            _dwflags,
             cpus
         );
 
@@ -146,19 +146,18 @@ impl UDSCredentialsFilter {
             let username = lsa::lsa_unicode_string_to_string(&logon.Logon.UserName);
             // Note that credential can be unprotected or protected, so we use our utils to unprotect if needed
             // let password = lsa::unprotect_credential(logon.Logon.Password)?;
-            let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
+            // let domain = lsa::lsa_unicode_string_to_string(&logon.Logon.LogonDomainName);
 
             debug_dev!(
-                "UpdateRemoteCredential: username: {}, domain: {}",
+                "UpdateRemoteCredential: username: {}",
                 username,
-                domain
             );
             if let Some((ticket, key)) = crate::broker::transform_broker_credential(&username) {
                 UDSCredentialsFilter::set_received_credential(Some(
                     types::Credential::with_credential(&ticket, &key),
                 ));
             } else {
-                return Err(E_INVALIDARG.into());  // Not recognized credential
+                return Err(E_INVALIDARG.into()); // Not recognized credential
             }
         }
 
@@ -182,7 +181,14 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         rgballow: *mut windows::core::BOOL,
         cproviders: u32,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderFilter::Filter");
+        debug_flow!(
+            "ICredentialProviderFilter::Filter({:?}, {:?}, {:?}, {:?}, {:?})",
+            cpus,
+            dwflags,
+            rgclsidproviders,
+            rgballow,
+            cproviders
+        );
 
         self.filter(cpus, dwflags, rgclsidproviders, rgballow, cproviders)
     }
@@ -196,7 +202,7 @@ impl ICredentialProviderFilter_Impl for UDSCredentialsFilter_Impl {
         // After some tests, the data obtanined from this will be provided to the selected Credential Provider
         // We can simply return transformer credential here, an treat them on our Provider SetSerialzation
         // But the result will be the same.
-        debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential");
+        debug_flow!("ICredentialProviderFilter::UpdateRemoteCredential({:?}, {:?})", pcpcsin, pcpcsout);
 
         self.update_remote_credential(pcpcsin, pcpcsout)
     }

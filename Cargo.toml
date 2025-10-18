@@ -8,7 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # https://microsoft.github.io/windows-rs/features/
-windows = { version = "0.62.0", features = [
+windows = { version = "0.62.2", features = [
     # Networking
     "Win32_Networking_WinHttp",
 
@@ -43,22 +43,22 @@ windows = { version = "0.62.0", features = [
     "Win32_Security_Authentication_Identity"
 ] }
 # To avoid version conflicts with other imported packages, force this version
-windows-core = "0.62.0"
+windows-core = "0.62.2"
 
 # crypt part
 base64 = "0.22.1"
 aes-gcm = "0.10.3"
 
 byteorder = "1.5.0"
-anyhow = "1.0.99"
-widestring = "1.2.0"
-serde = { version = "1.0.219", features = ["derive"] }
+anyhow = "1.0.100"
+widestring = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 # For Protocol Buffers
 prost = "0.14.1"
 prost-types = "0.14.1"
 # Zeroize, for securing data
-zeroize = "1.8.1"
+zeroize = "1.8.2"
 
 # Logging
 tracing = "0.1.41"
@@ -79,12 +79,12 @@ opt-level = 3
 
 [build-dependencies]
 prost-build = "0.14.1"
-chrono = "0.4.41"
+chrono = "0.4.42"
 winres = "0.1"
 
 
 [dev-dependencies]
 mockito = "1.7.0"
-libloading = "0.8.8"
+libloading = "0.8.9"
 rand = "0.9.2"
 serial_test = "3.2.0"

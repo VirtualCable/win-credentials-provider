@@ -30,13 +30,16 @@ Author: Adolfo Gómez, dkmaster at dkmon dot com
 use super::*;
 
 use prost::Message;
-use rand::{Rng, distr};
+use rand::{self, RngExt, distr};
 use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
 
-use crate::{messages::auth::*, utils::log::{setup_logging, info}};
+use crate::{
+    messages::auth::*,
+    utils::log::{info, setup_logging},
+};
 
 const VALID_BROKER_CREDENTIAL: &str =
-        "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
+    "uds-12345678901234567890123456789012345678901234567812345678901234567890123456789012";
 
 #[test]
 fn test_create_destroy_create() {
@@ -153,7 +156,7 @@ fn test_invalid_auth_request() {
     // the auth_token + the broker credential
     let buf = rand::rng()
         .sample_iter(&distr::Alphanumeric)
-        .take(1020)  // Limit to 1024 with ALL data, so < 1024
+        .take(1020) // Limit to 1024 with ALL data, so < 1024
         .map(char::from)
         .collect::<String>()
         .encode_to_vec();
@@ -163,13 +166,7 @@ fn test_invalid_auth_request() {
 
     let mut written = 0u32;
     unsafe {
-        WriteFile(
-            pipe_handle.get(),
-            Some(&len_buf),
-            Some(&mut written),
-            None,
-        )
-        .unwrap();
+        WriteFile(pipe_handle.get(), Some(&len_buf), Some(&mut written), None).unwrap();
         WriteFile(pipe_handle.get(), Some(&buf), Some(&mut written), None).unwrap();
     }
 
@@ -196,7 +193,7 @@ fn test_invalid_structure_auth_request() {
         &AuthRequest {
             protocol_version: 0xDEADBEEF,          // Incorrect protocol
             auth_token: "short_token".to_string(), // Too short
-            broker_credential: "".to_string(),      // Empty broker credential
+            broker_credential: "".to_string(),     // Empty broker credential
         },
     )
     .unwrap();
@@ -253,13 +250,7 @@ fn test_message_too_large() {
 
     let mut written = 0u32;
     unsafe {
-        WriteFile(
-            pipe_handle.get(),
-            Some(&len_buf),
-            Some(&mut written),
-            None,
-        )
-        .unwrap();
+        WriteFile(pipe_handle.get(), Some(&len_buf), Some(&mut written), None).unwrap();
         let result = WriteFile(
             pipe_handle.get(),
             Some(&oversized_payload),
@@ -300,13 +291,7 @@ pub fn test_cannot_dos_auth_request() {
 
     let mut written = 0u32;
     unsafe {
-        WriteFile(
-            pipe_handle.get(),
-            Some(&len_buf),
-            Some(&mut written),
-            None,
-        )
-        .unwrap();
+        WriteFile(pipe_handle.get(), Some(&len_buf), Some(&mut written), None).unwrap();
         let result = WriteFile(
             pipe_handle.get(),
             Some(&oversized_payload),
@@ -471,6 +456,9 @@ fn check_auth_request(server: &ChannelServer, expected_token: &str) -> AuthReque
         "Invalid protocol version"
     );
     assert!(request.auth_token == expected_token, "Invalid auth token");
-    assert!(request.broker_credential == VALID_BROKER_CREDENTIAL, "Invalid broker credential");
+    assert!(
+        request.broker_credential == VALID_BROKER_CREDENTIAL,
+        "Invalid broker credential"
+    );
     request
 }

@@ -373,20 +373,23 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         pcpce: windows::core::Ref<'_, ICredentialProviderCredentialEvents>,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::Advise");
+        debug_flow!(
+            "ICredentialProviderCredential::Advise({:?})",
+            pcpce.unwrap()
+        );
         self.register_event_manager(pcpce.unwrap().clone())
     }
 
     // Release the callback
     fn UnAdvise(&self) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::UnAdvise");
+        debug_flow!("ICredentialProviderCredential::UnAdvise()");
         self.unregister_event_manager()
     }
 
     // Invoked when our tile is selected.
     // We do not heed any special here, Just inform to not autologon
     fn SetSelected(&self) -> windows::core::Result<BOOL> {
-        debug_flow!("ICredentialProviderCredential::SetSelected");
+        debug_flow!("ICredentialProviderCredential::SetSelected()");
 
         // true --> Focus on our main credential field
         // false --> do not focus
@@ -396,7 +399,7 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
     // Our tile is deselected, clear the password value
     // To do not keep it in memory
     fn SetDeselected(&self) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::SetDeselected");
+        debug_flow!("ICredentialProviderCredential::SetDeselected()");
         // If values[<index>] is the password field, clear it
         self.clear_password()
     }
@@ -409,34 +412,54 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         pcpfs: *mut CREDENTIAL_PROVIDER_FIELD_STATE,
         pcpfis: *mut CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::GetFieldState");
+        debug_flow!(
+            "ICredentialProviderCredential::GetFieldState({:?}, {:?}, {:?})",
+            dwfieldid,
+            pcpfs,
+            pcpfis
+        );
         unsafe { self.get_field_state(dwfieldid, pcpfs, pcpfis) }
     }
 
     /// Retrieves the string value of a field.
     fn GetStringValue(&self, dwfieldid: u32) -> windows::core::Result<PWSTR> {
-        debug_flow!("ICredentialProviderCredential::GetStringValue");
+        debug_flow!(
+            "ICredentialProviderCredential::GetStringValue({:?})",
+            dwfieldid
+        );
         self.get_string_value(dwfieldid)
     }
 
     // Get the bitmap shown on the user tile
     fn GetBitmapValue(&self, dwfieldid: u32) -> windows::core::Result<HBITMAP> {
-        debug_flow!("ICredentialProviderCredential::GetBitmapValue");
+        debug_flow!(
+            "ICredentialProviderCredential::GetBitmapValue({:?})",
+            dwfieldid
+        );
         self.get_bitmap_value(dwfieldid)
     }
 
     fn GetCheckboxValue(
         &self,
-        _dwfieldid: u32,
-        _pbchecked: *mut BOOL,
-        _ppszlabel: *mut PWSTR,
+        dwfieldid: u32,
+        pbchecked: *mut BOOL,
+        ppszlabel: *mut PWSTR,
     ) -> windows::core::Result<()> {
+        debug_flow!(
+            "ICredentialProviderCredential::GetCheckboxValue({:?}, {:?}, {:?})",
+            dwfieldid,
+            pbchecked,
+            ppszlabel
+        );
         Err(E_NOTIMPL.into())
     }
 
     // This returns the field id that will have the submit button next to it
     fn GetSubmitButtonValue(&self, dwfieldid: u32) -> windows::core::Result<u32> {
-        debug_flow!("ICredentialProviderCredential::GetSubmitButtonValue");
+        debug_flow!(
+            "ICredentialProviderCredential::GetSubmitButtonValue({:?})",
+            dwfieldid
+        );
         if dwfieldid == UdsFieldId::SubmitButton as u32 {
             Ok(UdsFieldId::Password as u32)
         } else {
@@ -446,39 +469,63 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
 
     fn GetComboBoxValueCount(
         &self,
-        _dwfieldid: u32,
-        _pcitems: *mut u32,
-        _pdwselecteditem: *mut u32,
+        dwfieldid: u32,
+        pcitems: *mut u32,
+        pdwselecteditem: *mut u32,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::GetComboBoxValueCount");
+        debug_flow!(
+            "ICredentialProviderCredential::GetComboBoxValueCount({:?}, {:?}, {:?})",
+            dwfieldid,
+            pcitems,
+            pdwselecteditem
+        );
         Err(E_NOTIMPL.into())
     }
-    fn GetComboBoxValueAt(&self, _dwfieldid: u32, _dwitem: u32) -> windows::core::Result<PWSTR> {
-        debug_flow!("ICredentialProviderCredential::GetComboBoxValueAt");
+    fn GetComboBoxValueAt(&self, dwfieldid: u32, dwitem: u32) -> windows::core::Result<PWSTR> {
+        debug_flow!(
+            "ICredentialProviderCredential::GetComboBoxValueAt({:?}, {:?})",
+            dwfieldid,
+            dwitem
+        );
         Err(E_NOTIMPL.into())
     }
 
     fn SetStringValue(&self, dwfieldid: u32, psz: &PCWSTR) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::SetStringValue");
+        debug_flow!(
+            "ICredentialProviderCredential::SetStringValue({:?}, {:?})",
+            dwfieldid,
+            psz
+        );
         self.set_string_value(dwfieldid, psz)
     }
 
-    fn SetCheckboxValue(&self, _dwfieldid: u32, _bchecked: BOOL) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::SetCheckboxValue");
+    fn SetCheckboxValue(&self, dwfieldid: u32, bchecked: BOOL) -> windows::core::Result<()> {
+        debug_flow!(
+            "ICredentialProviderCredential::SetCheckboxValue({:?}, {:?})",
+            dwfieldid,
+            bchecked
+        );
         Err(E_NOTIMPL.into())
     }
 
     fn SetComboBoxSelectedValue(
         &self,
-        _dwfieldid: u32,
-        _dwselecteditem: u32,
+        dwfieldid: u32,
+        dwselecteditem: u32,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::SetComboBoxSelectedValue");
+        debug_flow!(
+            "ICredentialProviderCredential::SetComboBoxSelectedValue({:?}, {:?})",
+            dwfieldid,
+            dwselecteditem
+        );
         Err(E_NOTIMPL.into())
     }
 
-    fn CommandLinkClicked(&self, _dwfieldid: u32) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::CommandLinkClicked");
+    fn CommandLinkClicked(&self, dwfieldid: u32) -> windows::core::Result<()> {
+        debug_flow!(
+            "ICredentialProviderCredential::CommandLinkClicked({:?})",
+            dwfieldid
+        );
         Err(E_NOTIMPL.into())
     }
 
@@ -489,10 +536,16 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         pcpgsr: *mut CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE,
         pcpcs: *mut CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
-        _ppszoptionalstatustext: *mut PWSTR,
-        _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
+        ppszoptionalstatustext: *mut PWSTR,
+        pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::GetSerialization");
+        debug_flow!(
+            "ICredentialProviderCredential::GetSerialization({:?}, {:?}, {:?}, {:?})",
+            pcpgsr,
+            pcpcs,
+            ppszoptionalstatustext,
+            pcpsioptionalstatusicon
+        );
         self.serialize(pcpgsr, pcpcs)
     }
 
@@ -500,10 +553,16 @@ impl ICredentialProviderCredential_Impl for UDSCredential_Impl {
         &self,
         ntsstatus: NTSTATUS,
         ntssubstatus: NTSTATUS,
-        _ppszoptionalstatustext: *mut PWSTR,
-        _pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
+        ppszoptionalstatustext: *mut PWSTR,
+        pcpsioptionalstatusicon: *mut CREDENTIAL_PROVIDER_STATUS_ICON,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProviderCredential::ReportResult");
+        debug_flow!(
+            "ICredentialProviderCredential::ReportResult({:?}, {:?}, {:?}, {:?})",
+            ntsstatus,
+            ntssubstatus,
+            ppszoptionalstatustext,
+            pcpsioptionalstatusicon
+        );
         if ntsstatus.is_err() || ntssubstatus.is_err() {
             error!("Login failed: {} {}", ntsstatus.0, ntssubstatus.0);
         } else {

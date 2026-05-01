@@ -34,7 +34,6 @@ use std::sync::{
 use windows::{
     Win32::{
         Foundation::{E_INVALIDARG, E_NOTIMPL},
-        Storage::EnhancedStorage::PKEY_Identity_UserName,
         UI::Shell::{
             CPUS_CHANGE_PASSWORD, CPUS_CREDUI, CPUS_LOGON, CPUS_PLAP, CPUS_UNLOCK_WORKSTATION,
             CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION, CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR,
@@ -96,7 +95,10 @@ impl UDSCredentialsProvider {
         // Get broker credential
         if let Some((ticket, key)) = broker::transform_broker_credential(&msg.broker_credential) {
             debug_dev!("Received broker credential, obtaining real credentials from broker");
-            self.credential.write().unwrap().set_credential(&ticket, &key);
+            self.credential
+                .write()
+                .unwrap()
+                .set_credential(&ticket, &key);
 
             // If we have an event manager, notify it of the credential change
             if let Some(event_manager) = self.get_event_manager()? {
@@ -177,6 +179,8 @@ impl UDSCredentialsProvider {
         &self,
         _pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
+        // Left here for reference. This is a possible implementation if we want to
+        // handle the serialization directly on the provider,
         // unsafe {
         //     if (*pcpcs).clsidCredentialProvider != crate::globals::CLSID_UDS_CREDENTIAL_PROVIDER {
         //         return Err(E_INVALIDARG.into());
@@ -271,12 +275,11 @@ impl UDSCredentialsProvider {
         let pdwcount = 1; // If 0, our provider will not be shown
 
         // If is rdp and either has valid creds or have received creds
-        let (pwdefault, pwautologonwithdefault) =
-            if has_valid_creds || have_received_creds {
-                (0, true.into())
-            } else {
-                (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-            };
+        let (pwdefault, pwautologonwithdefault) = if has_valid_creds || have_received_creds {
+            (0, true.into())
+        } else {
+            (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+        };
         Ok((pdwcount, pwdefault, pwautologonwithdefault))
     }
 
@@ -320,10 +323,13 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     fn SetUsageScenario(
         &self,
         cpus: CREDENTIAL_PROVIDER_USAGE_SCENARIO,
-        _dwflags: u32,
+        dwflags: u32,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProvider::SetUsageScenario");
-        debug_dev!("SetUsageScenario called: {:?} {}", cpus, _dwflags);
+        debug_flow!(
+            "ICredentialProvider::SetUsageScenario({:?}, {})",
+            cpus,
+            dwflags
+        );
         self.set_usage_scenario(cpus)
     }
 
@@ -335,7 +341,8 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         pcpcs: *const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProvider::SetSerialization");
+        debug_flow!("ICredentialProvider::SetSerialization({:?})", pcpcs);
+        debug_dev!("SetSerialization called: pcpcs: {:?}", unsafe { *pcpcs });
         self.unserialize(pcpcs)
     }
 
@@ -344,17 +351,21 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         pcpe: windows::core::Ref<'_, ICredentialProviderEvents>,
         upadvisecontext: usize,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProvider::Advise");
+        debug_flow!(
+            "ICredentialProvider::Advise({:?}, {:?})",
+            pcpe.unwrap(),
+            upadvisecontext
+        );
         self.register_event_manager(pcpe.unwrap().clone(), upadvisecontext)
     }
 
     fn UnAdvise(&self) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProvider::UnAdvise");
+        debug_flow!("ICredentialProvider::UnAdvise()");
         self.unregister_event_manager()
     }
 
     fn GetFieldDescriptorCount(&self) -> windows::core::Result<u32> {
-        debug_flow!("ICredentialProvider::GetFieldDescriptorCount");
+        debug_flow!("ICredentialProvider::GetFieldDescriptorCount()");
         Ok(self.get_number_of_fields())
     }
 
@@ -362,7 +373,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         &self,
         dwindex: u32,
     ) -> windows::core::Result<*mut CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR> {
-        debug_flow!("ICredentialProvider::GetFieldDescriptorAt");
+        debug_flow!("ICredentialProvider::GetFieldDescriptorAt({})", dwindex);
         self.get_field_descriptor_at(dwindex)
     }
 
@@ -373,7 +384,12 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
         pdwdefault: *mut u32,
         pbautologonwithdefault: *mut windows::core::BOOL,
     ) -> windows::core::Result<()> {
-        debug_flow!("ICredentialProvider::GetCredentialCount");
+        debug_flow!(
+            "ICredentialProvider::GetCredentialCount({:?}, {:?}, {:?})",
+            pdwcount,
+            pdwdefault,
+            pbautologonwithdefault
+        );
         // If we have redirected credentials, SetSerialization will be invoked prior us
         // If not, we allow interactive logon
         unsafe { (*pdwcount, *pdwdefault, *pbautologonwithdefault) = self.get_credential_count()? };
@@ -381,7 +397,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
     }
 
     fn GetCredentialAt(&self, dwindex: u32) -> Result<ICredentialProviderCredential> {
-        debug_flow!("ICredentialProvider::GetCredentialAt");
+        debug_flow!("ICredentialProvider::GetCredentialAt({})", dwindex);
         self.get_credential_at(dwindex)
     }
 }
@@ -391,40 +407,49 @@ impl ICredentialProviderSetUserArray_Impl for UDSCredentialsProvider_Impl {
         &self,
         users: windows_core::Ref<'_, ICredentialProviderUserArray>,
     ) -> windows_core::Result<()> {
-        debug_flow!("ICredentialProviderSetUserArray::SetUserArray");
+        debug_flow!(
+            "ICredentialProviderSetUserArray::SetUserArray({:?})",
+            users.unwrap()
+        );
 
-        let users = users.unwrap();
-        debug_dev!("Number of users present in the user array: {}", unsafe {
-            users.GetCount()?
-        });
+        // Just for debug purposes, enumerate users
+        #[cfg(debug_assertions)]
+        {
+            use windows::Win32::Storage::EnhancedStorage::PKEY_Identity_UserName;
 
-        let user_count = unsafe { users.GetCount()? };
-        for i in 0..user_count {
-            debug_dev!("User {} present in the user array", i);
-            let user = unsafe { users.GetAt(i) };
-            if let Ok(usr) = user {
-                let username = unsafe {
-                    if let Ok(value) = usr.GetStringValue(&PKEY_Identity_UserName) {
-                        let username = value.to_string().unwrap_or_default();
+            let users = users.unwrap();
+            debug_dev!("Number of users present in the user array: {}", unsafe {
+                users.GetCount()?
+            });
 
-                        debug_dev!("User detected:: {}", username);
+            let user_count = unsafe { users.GetCount()? };
+            for i in 0..user_count {
+                debug_dev!("User {} present in the user array", i);
+                let user = unsafe { users.GetAt(i) };
+                if let Ok(usr) = user {
+                    let username = unsafe {
+                        if let Ok(value) = usr.GetStringValue(&PKEY_Identity_UserName) {
+                            let username = value.to_string().unwrap_or_default();
 
-                        Some(username)
-                    } else {
-                        None
-                    }
-                };
+                            debug_dev!("User detected:: {}", username);
 
-                debug_dev!("User {} has username: {:?}", i, username);
+                            Some(username)
+                        } else {
+                            None
+                        }
+                    };
+
+                    debug_dev!("User {} has username: {:?}", i, username);
+                }
+
+                // if let Some(username) = username {
+                //     // Set the username in our credential
+                //     self.credential
+                //         .write()
+                //         .unwrap()
+                //         .set_username_value(&username);
+                // }
             }
-
-            // if let Some(username) = username {
-            //     // Set the username in our credential
-            //     self.credential
-            //         .write()
-            //         .unwrap()
-            //         .set_username_value(&username);
-            // }
         }
         Ok(())
     }

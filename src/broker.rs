@@ -314,22 +314,47 @@ fn read_broker_info() -> Result<BrokerInfo> {
         E_FAIL
     })?;
 
-    Ok(BrokerInfo {
-        url: format!(
-            "https://{}/{}",
-            json.get("host").and_then(|v| v.as_str()).unwrap_or(""),
-            globals::BROKER_TICKET_PATH,
-        ),
-        verify_ssl: json
-            .get("check_certificate")
-            .and_then(|v| v.as_bool())
+    Ok(broker_info_from_actor_config(&json))
+}
+
+// Current actor stores "broker_url" (e.g. "https://host:port/uds/rest/") and "verify_ssl".
+// Older actor builds stored "host" and "check_certificate"; both layouts are accepted.
+fn broker_info_from_actor_config(json: &serde_json::Value) -> BrokerInfo {
+    let str_field = |name: &str| json.get(name).and_then(|v| v.as_str()).unwrap_or("");
+    let bool_field = |name: &str| json.get(name).and_then(|v| v.as_bool());
+
+    let broker_url = str_field("broker_url");
+    let origin = if broker_url.is_empty() {
+        let host = str_field("host");
+        if host.is_empty() {
+            String::new()
+        } else {
+            format!("https://{}", host)
+        }
+    } else {
+        url_origin(broker_url).to_string()
+    };
+
+    BrokerInfo {
+        url: if origin.is_empty() {
+            String::new()
+        } else {
+            format!("{}{}", origin, globals::BROKER_TICKET_PATH)
+        },
+        verify_ssl: bool_field("verify_ssl")
+            .or_else(|| bool_field("check_certificate"))
             .unwrap_or(false),
-        actor_token: json
-            .get("own_token")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-    })
+        actor_token: str_field("own_token").to_string(),
+    }
+}
+
+/// "https://host:port/uds/rest/" -> "https://host:port"
+fn url_origin(url: &str) -> &str {
+    let authority_start = url.find("://").map(|pos| pos + 3).unwrap_or(0);
+    match url[authority_start..].find('/') {
+        Some(path_start) => &url[..authority_start + path_start],
+        None => url,
+    }
 }
 
 #[cfg(test)]
@@ -391,6 +416,58 @@ mod tests {
         set_broker_info("", "", false);
         let result = get_credentials_from_broker("ticket", "key");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_broker_info_from_current_actor_config() {
+        let json = serde_json::json!({
+            "broker_url": "https://192.168.0.150/uds/rest/",
+            "verify_ssl": true,
+            "own_token": "ust-token",
+        });
+        let info = broker_info_from_actor_config(&json);
+        assert_eq!(
+            info.url,
+            "https://192.168.0.150/uds/rest/actor/v3/ticket/userservice"
+        );
+        assert!(info.verify_ssl);
+        assert_eq!(info.actor_token, "ust-token");
+        assert!(info.is_valid());
+    }
+
+    #[test]
+    fn test_broker_info_keeps_port() {
+        let json = serde_json::json!({
+            "broker_url": "https://broker.example.com:8443/uds/rest/",
+            "own_token": "t",
+        });
+        assert_eq!(
+            broker_info_from_actor_config(&json).url,
+            "https://broker.example.com:8443/uds/rest/actor/v3/ticket/userservice"
+        );
+    }
+
+    #[test]
+    fn test_broker_info_from_legacy_actor_config() {
+        let json = serde_json::json!({
+            "host": "broker.example.com",
+            "check_certificate": true,
+            "own_token": "t",
+        });
+        let info = broker_info_from_actor_config(&json);
+        assert_eq!(
+            info.url,
+            "https://broker.example.com/uds/rest/actor/v3/ticket/userservice"
+        );
+        assert!(info.verify_ssl);
+    }
+
+    #[test]
+    fn test_broker_info_without_broker_is_invalid() {
+        let json = serde_json::json!({ "own_token": "t" });
+        let info = broker_info_from_actor_config(&json);
+        assert!(info.url.is_empty());
+        assert!(!info.is_valid());
     }
 
     // Note: This test is disabled by default, needs the key on registry

@@ -25,13 +25,13 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
+Author: Janier Rodríguez, jrodriguez at virtualcable dot es
 */
 #![cfg(windows)]
 
 use win_cred_provider::{
-    credentials::types,
     globals,
-    utils::{com, helpers::username_with_domain, log, log::info, lsa},
+    utils::{com, log, log::info, lsa},
 };
 use windows::{
     Win32::UI::Shell::{
@@ -168,8 +168,8 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     // Autologon should be TRUE with valid cdeds
     assert_eq!(autologon.as_bool(), valid_cred);
 
-    // As this is a rdp redirected scenario, we expect 1 credential, no default and autologon to be true
-    assert_eq!(cred_count, 1);
+    // Only a valid redirected credential produces a tile; otherwise nothing is exposed
+    assert_eq!(cred_count, if valid_cred { 1 } else { 0 });
     assert_eq!(
         cred_default,
         if valid_cred {
@@ -187,6 +187,12 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
         }
     );
 
+    if !valid_cred {
+        // No tile, so LogonUI never asks for a credential
+        assert!(unsafe { provider.GetCredentialAt(0) }.is_err());
+        return Ok(());
+    }
+
     // Get the Credential interface
     let credential = unsafe { provider.GetCredentialAt(0)? };
     info!("Credential: {:?}", credential);
@@ -197,18 +203,6 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     let icredential_provider_credential_events: ICredentialProviderCredentialEvents =
         credential_provider_credential_events.clone().into();
     unsafe { credential.Advise(&icredential_provider_credential_events)? };
-
-    // If invalid credentials, simulate the input of fields
-    if !valid_cred {
-        let pwstr_username = com::alloc_pcwstr(&username_with_domain(username, domain)).unwrap();
-        let pwstr_password = com::alloc_pcwstr(password).unwrap();
-        unsafe {
-            credential.SetStringValue(types::UdsFieldId::Username as u32, pwstr_username)?;
-            credential.SetStringValue(types::UdsFieldId::Password as u32, pwstr_password)?;
-        }
-        com::free_pcwstr(pwstr_username);
-        com::free_pcwstr(pwstr_password);
-    }
 
     // GetSerialization needs a bit more setup
     let mut pcpgsr = CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE(-1);

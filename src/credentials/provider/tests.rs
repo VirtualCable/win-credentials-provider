@@ -25,6 +25,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
+Author: Janier Rodríguez, jrodriguez at virtualcable dot es
 */
 use std::{sync::atomic::AtomicU32, time::Instant};
 
@@ -371,8 +372,8 @@ fn test_get_credential_count_no_creds() -> Result<()> {
     let cred_count = provider.get_credential_count().unwrap();
     assert_eq!(
         cred_count,
-        (1u32, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-    ); // No credentials
+        (0u32, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+    ); // No credentials, no tile
 
     // Just to ensure that the problem was the creds
     provider

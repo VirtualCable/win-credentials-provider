@@ -25,6 +25,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
+Author: Janier Rodríguez, jrodriguez at virtualcable dot es
 */
 use std::sync::{
     Arc, RwLock,
@@ -272,14 +273,14 @@ impl UDSCredentialsProvider {
             have_received_creds
         );
 
-        let pdwcount = 1; // If 0, our provider will not be shown
-
-        // If is rdp and either has valid creds or have received creds
-        let (pwdefault, pwautologonwithdefault) = if has_valid_creds || have_received_creds {
-            (0, true.into())
-        } else {
-            (CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-        };
+        // Without credentials from the broker or the RDP filter there is nothing
+        // to log on with, so no tile is exposed to LogonUI (count 0).
+        let (pdwcount, pwdefault, pwautologonwithdefault) =
+            if has_valid_creds || have_received_creds {
+                (1, 0, true.into())
+            } else {
+                (0, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
+            };
         Ok((pdwcount, pwdefault, pwautologonwithdefault))
     }
 
@@ -390,8 +391,6 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
             pdwdefault,
             pbautologonwithdefault
         );
-        // If we have redirected credentials, SetSerialization will be invoked prior us
-        // If not, we allow interactive logon
         unsafe { (*pdwcount, *pdwdefault, *pbautologonwithdefault) = self.get_credential_count()? };
         Ok(())
     }

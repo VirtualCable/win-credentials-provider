@@ -25,11 +25,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 /*!
 Author: Adolfo Gómez, dkmaster at dkmon dot com
+Author: Janier Rodríguez, jrodriguez at virtualcable dot es
 */
 #![cfg(windows)]
 
 use win_cred_provider::{
-    credentials::fields,
+    credentials::{fields, filter, types},
     utils::{com, log, log::info, lsa},
 };
 use windows::{
@@ -85,10 +86,22 @@ fn test_normal_logon() -> Result<()> {
         autologon.as_bool()
     );
 
-    // As this is a "normal", should have return that do not autologon, 1 cred_Count and no default
-    assert_eq!(cred_count, 1);
+    // Without broker or RDP credentials the provider exposes no tile at all
+    assert_eq!(cred_count, 0);
     assert_eq!(cred_default, CREDENTIAL_PROVIDER_NO_DEFAULT);
     assert_eq!(autologon, BOOL::from(false));
+
+    // Simulate credentials received through the RDP filter: now the tile must show up
+    filter::UDSCredentialsFilter::set_received_credential(Some(
+        types::Credential::with_credential("ticket", "key"),
+    ));
+    unsafe {
+        provider.GetCredentialCount(&mut cred_count, &mut cred_default, &mut autologon)?;
+    }
+    assert_eq!(cred_count, 1);
+    assert_eq!(cred_default, 0);
+    assert_eq!(autologon, BOOL::from(true));
+    filter::UDSCredentialsFilter::set_received_credential(None);
 
     // Get the Credential interface
     let credential = unsafe { provider.GetCredentialAt(0)? };

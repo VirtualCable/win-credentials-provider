@@ -101,10 +101,10 @@ fn test_normal_logon() -> Result<()> {
     assert_eq!(cred_count, 1);
     assert_eq!(cred_default, 0);
     assert_eq!(autologon, BOOL::from(true));
-    filter::UDSCredentialsFilter::set_received_credential(None);
 
     // Get the Credential interface
     let credential = unsafe { provider.GetCredentialAt(0)? };
+    filter::UDSCredentialsFilter::set_received_credential(None);
     info!("Credential: {:?}", credential);
 
     // Advise

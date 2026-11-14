@@ -259,36 +259,36 @@ impl UDSCredentialsProvider {
             .into_com_alloc()
     }
 
-    fn get_credential_count(&self) -> windows::core::Result<(u32, u32, BOOL)> {
-        // If we have redirected credentials, we will provide the autologon value
-        // So our Credential GetSerialization will be invoked to get
-        // the credentials.
-        // Here, only need to check if we have valid credentials to enable i
+    fn has_credentials(&self) -> bool {
         let has_valid_creds = self.credential.read().unwrap().has_valid_credential();
         let have_received_creds = UDSCredentialsFilter::has_received_credential();
 
         debug_dev!(
-            "get_credential_count called. has_valid_creds: {}, have_received_creds: {}",
+            "has_credentials called. has_valid_creds: {}, have_received_creds: {}",
             has_valid_creds,
             have_received_creds
         );
+        has_valid_creds || have_received_creds
+    }
 
+    fn get_credential_count(&self) -> windows::core::Result<(u32, u32, BOOL)> {
+        // If we have redirected credentials, we will provide the autologon value
+        // So our Credential GetSerialization will be invoked to get
+        // the credentials.
         // Without credentials from the broker or the RDP filter there is nothing
         // to log on with, so no tile is exposed to LogonUI (count 0).
-        let (pdwcount, pwdefault, pwautologonwithdefault) =
-            if has_valid_creds || have_received_creds {
-                (1, 0, true.into())
-            } else {
-                (0, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into())
-            };
-        Ok((pdwcount, pwdefault, pwautologonwithdefault))
+        if self.has_credentials() {
+            Ok((1, 0, true.into()))
+        } else {
+            Ok((0, CREDENTIAL_PROVIDER_NO_DEFAULT, false.into()))
+        }
     }
 
     fn get_credential_at(
         &self,
         index: u32,
     ) -> windows::core::Result<ICredentialProviderCredential> {
-        if index == 0 {
+        if index == 0 && self.has_credentials() {
             Ok(self.credential.read().unwrap().clone().into())
         } else {
             Err(windows::core::Error::from_hresult(E_INVALIDARG))

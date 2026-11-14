@@ -406,11 +406,40 @@ fn test_get_credential_count_no_rdp() -> Result<()> {
 }
 
 #[test]
-#[serial_test::serial(broker_info)]
+#[serial_test::serial(broker_info, rdp)]
 fn test_get_credential_at_ok() {
     let provider = create_provider();
+    filter::UDSCredentialsFilter::set_received_credential(None);
+    provider
+        .credential
+        .write()
+        .unwrap()
+        .set_credential("ticket", "key");
     let result = provider.get_credential_at(0);
     assert!(result.is_ok());
+}
+
+#[test]
+#[serial_test::serial(broker_info, rdp)]
+fn test_get_credential_at_with_filter_credential_ok() {
+    let provider = create_provider();
+    provider.credential.write().unwrap().reset_credential();
+    filter::UDSCredentialsFilter::set_received_credential(Some(
+        crate::credentials::types::Credential::with_credential("ticket", "key"),
+    ));
+    let result = provider.get_credential_at(0);
+    filter::UDSCredentialsFilter::set_received_credential(None);
+    assert!(result.is_ok());
+}
+
+#[test]
+#[serial_test::serial(broker_info, rdp)]
+fn test_get_credential_at_without_credentials_err() {
+    let provider = create_provider();
+    provider.credential.write().unwrap().reset_credential();
+    filter::UDSCredentialsFilter::set_received_credential(None);
+    let result = provider.get_credential_at(0);
+    assert!(result.is_err());
 }
 
 #[test]

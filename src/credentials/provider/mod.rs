@@ -268,6 +268,7 @@ impl UDSCredentialsProvider {
             has_valid_creds,
             have_received_creds
         );
+        // If is rdp and either has valid creds or have received creds
         has_valid_creds || have_received_creds
     }
 
@@ -391,6 +392,7 @@ impl ICredentialProvider_Impl for UDSCredentialsProvider_Impl {
             pdwdefault,
             pbautologonwithdefault
         );
+        // If we have redirected credentials, SetSerialization will be invoked prior us
         unsafe { (*pdwcount, *pdwdefault, *pbautologonwithdefault) = self.get_credential_count()? };
         Ok(())
     }

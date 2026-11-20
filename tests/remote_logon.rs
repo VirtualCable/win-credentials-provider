@@ -116,7 +116,8 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     )?;
 
     // Cred serial out is not used right now, should set the RECV_CRED global on filter
-    let update_result = unsafe { filter.UpdateRemoteCredential(&cred_serial_in, &mut cred_serial_out) };
+    let update_result =
+        unsafe { filter.UpdateRemoteCredential(&cred_serial_in, &mut cred_serial_out) };
     if valid_cred {
         update_result?;
     } else {

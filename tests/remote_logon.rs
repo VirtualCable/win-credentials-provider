@@ -34,6 +34,7 @@ use win_cred_provider::{
     utils::{com, helpers::username_with_domain, log, log::info, lsa},
 };
 use windows::{
+    Win32::Foundation::E_INVALIDARG,
     Win32::UI::Shell::{
         CPSI_NONE, CPUS_LOGON, CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION,
         CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE, CREDENTIAL_PROVIDER_NO_DEFAULT,
@@ -64,6 +65,7 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     unsafe { std::env::set_var("UDSCP_FORCE_RDP", "1") };
     unsafe { std::env::set_var("UDSCP_FAKE_CREDENTIALS", "username:password:domain") };
     unsafe { std::env::set_var("UDSCP_ENABLE_FLOW_LOG", "1") };
+    let (_url, _server, _mock) = test_utils::create_fake_broker();
 
     let (username, password, domain) = if valid_cred {
         (test_utils::TEST_BROKER_CREDENTIAL, "", "")
@@ -114,7 +116,13 @@ fn do_test_remote_logon(valid_cred: bool) -> Result<()> {
     )?;
 
     // Cred serial out is not used right now, should set the RECV_CRED global on filter
-    unsafe { filter.UpdateRemoteCredential(&cred_serial_in, &mut cred_serial_out)? };
+    let update_result =
+        unsafe { filter.UpdateRemoteCredential(&cred_serial_in, &mut cred_serial_out) };
+    if valid_cred {
+        update_result?;
+    } else {
+        assert_eq!(update_result.unwrap_err().code(), E_INVALIDARG);
+    }
     assert_eq!(
         win_cred_provider::credentials::filter::UDSCredentialsFilter::has_received_credential(),
         valid_cred
